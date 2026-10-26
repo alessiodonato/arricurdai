@@ -1,0 +1,27 @@
+{
+  "name": "@arricurdai/core",
+  "version": "0.0.0",
+  "description": "Cost model of arricurdAI: price-weighted session cost, rent of context blocks, load-now threshold.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup && tsc -p tsconfig.build.json",
+    "test": "tsc --noEmit && vitest run"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  }
+}

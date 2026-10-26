@@ -1,0 +1,6 @@
+packages:
+  - packages/*
+
+# esbuild finds its platform binary without its install script, so no dependency runs install scripts.
+ignoredBuiltDependencies:
+  - esbuild
