@@ -1,0 +1,28 @@
+{
+  "name": "@arricurdai/transcripts",
+  "version": "0.0.0",
+  "description": "Tolerant parser of Claude Code transcripts: API calls, usage, context reads and memory loads.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup && tsc -p tsconfig.build.json",
+    "test": "tsc --noEmit && vitest run"
+  },
+  "dependencies": {
+    "@arricurdai/core": "workspace:*",
+    "zod": "^4.6.7"
+  }
+}

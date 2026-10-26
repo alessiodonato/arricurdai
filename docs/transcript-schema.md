@@ -201,6 +201,43 @@ In headless mode, `Project` files load only when `--setting-sources` includes `p
    3. the line's `cwd`.
 9. **Memory.** Memory comes from `instructions` (loaded at turn 1) and `nested_memory` (with its own position). The profiler rebuilds memory from disk only when a session has no `instructions` attachment, as in older versions, and then marks the measure as approximate.
 10. **Bad and unknown lines.** Malformed lines, lines that are not objects and unknown types are counted per category and skipped.
+11. **Root.** Paths are made relative to the `cwd` of the session's first line, the folder Claude Code started in, unless the caller passes a root.
+
+### Bash commands
+
+In 2.1.310 most reads go through Bash, so the parser analyzes each command line without running it.
+
+- **Read-only commands.** A command is read-only when every program in it is a reader and nothing writes a file. The readers are `cat`, `sed -n`, `head`, `tail`, `grep` (also `egrep` and `fgrep`), `rg`, `find` and `ls`.
+- **Programs that do not break read-only.** These programs only format text or change folder, so they can appear in a read-only command:
+  - `cd`;
+  - `pwd`, `echo`, `printf`, `true`, `test`;
+  - `wc`, `cut`, `sort`, `uniq`, `tr`, `nl`, `column`;
+  - `basename`, `dirname`.
+
+  They are not reads themselves. A command that runs any other program, such as `pnpm`, `git`, `node` or `xargs`, is not read-only and none of its reads count.
+- **Kinds of read.**
+  - `cat`, `sed -n`, `head` and `tail` read **files**.
+  - `grep` and `rg` **search** a pattern in folders or files. A recursive grep with no path searches the current folder.
+  - `find`, `ls` and `rg --files` **list** folders.
+  - A reader whose input comes from a pipe and that has no path, as in `… | grep foo`, filters text and reads nothing.
+- **Folder.** `cd <dir>` at the start of a command line changes the folder that the following paths are resolved in.
+- **Several reads in one command.** When one command reads several targets, its result is split evenly among them, because the output does not say which part came from where.
+- **What is never read-only.** Redirects to a file (`>`, `>>`, `&>`), `sed -i`, `sed` without `-n`, and `find` with `-exec`, `-delete` or `-fprint`. A redirect to `/dev/null` or a copy of a descriptor (`2>&1`) is allowed.
+- **Constructs that cannot be analyzed.** These make a command not read-only:
+  - command substitution (`$(…)`, `` `…` ``);
+  - process substitution;
+  - heredocs;
+  - subshells;
+  - unbalanced quotes.
+- **Writes.** Writes found in any command count as file changes:
+  - redirect targets;
+  - files edited by `sed -i`;
+  - `tee`, `touch` and `rm`;
+  - both paths of `mv`;
+  - the destination of `cp`;
+  - `sort -o`.
+
+  This list is a best effort. A file changed by other programs is only caught by git.
 
 ## Open points
 
