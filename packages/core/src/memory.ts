@@ -105,26 +105,37 @@ export interface LineUsage {
   unverifiable: MemoryLine[];
 }
 
+export interface MemoryDocument {
+  /** The file as shown in the report. */
+  file: string;
+  content: string;
+  /** Sessions that loaded the file. A line can only be used where it was in the context. */
+  loadedIn: ReadonlySet<string>;
+}
+
 /**
  * Sorts the lines of the memory files by use. A line is used when one of its terms appears in what
- * an agent did in at least one session: its messages, its tool calls, and the paths it read or wrote.
+ * an agent did in a session that loaded the file: its messages, its tool calls, and the paths it
+ * read or wrote.
  */
-export function classifyMemoryLines(files: readonly { file: string; content: string }[], sessions: readonly ProfileSession[]): LineUsage {
-  const corpora = sessions.map((session) => {
+export function classifyMemoryLines(files: readonly MemoryDocument[], sessions: readonly ProfileSession[]): LineUsage {
+  const corpora = new Map(sessions.map((session) => {
     const contexts = [session.main, ...session.subagents];
-    return [
+    const corpus = [
       ...session.agentText,
       ...contexts.flatMap((context) => context.reads.flatMap((read) => [read.target, read.scope ?? ''])),
       ...session.fileChanges.map((change) => change.path),
     ].join('\n');
-  });
+    return [session.sessionId, corpus];
+  }));
 
   const usage: LineUsage = { used: [], unused: [], unverifiable: [] };
-  for (const { file, content } of files) {
+  for (const { file, content, loadedIn } of files) {
+    const where = [...loadedIn].flatMap((sessionId) => corpora.get(sessionId) ?? []);
     for (const line of memoryLines(file, content)) {
       if (line.kind === 'import') continue;
       if (line.kind === 'unverifiable') usage.unverifiable.push(line);
-      else if (corpora.some((corpus) => line.terms.some((term) => corpus.includes(term)))) usage.used.push(line);
+      else if (where.some((corpus) => line.terms.some((term) => corpus.includes(term)))) usage.used.push(line);
       else usage.unused.push(line);
     }
   }

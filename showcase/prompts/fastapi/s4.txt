@@ -1,0 +1,1 @@
+A user says that a dependency declared with use_cache=False is still called only once per request when two sub-dependencies use it. Without changing any code, explain from the source whether that can happen, and why.

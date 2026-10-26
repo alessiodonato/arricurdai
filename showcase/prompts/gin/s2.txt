@@ -1,0 +1,1 @@
+I want better visibility into route registration. When a route with a catch-all wildcard parameter is registered, print a debug line about it, using the debug print helpers Gin already has, so it only prints in debug mode. Keep the change minimal and in the style of the surrounding code. Don't run tests or builds: make the change and summarize the diff.

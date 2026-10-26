@@ -81,6 +81,14 @@ const toolResultBlock = z.object({
 
 const subagentMeta = z.object({ agentType: z.string().optional(), toolUseId: z.string().optional() });
 
+const FILE_WRITERS = new Set(['Write', 'Edit', 'MultiEdit']);
+
+/** CLAUDE.md, CLAUDE.local.md, files under a .claude folder (rules, auto memory) and MEMORY.md. */
+export function isMemoryFile(path: string): boolean {
+  const name = path.split('/').pop() ?? '';
+  return name === 'CLAUDE.md' || name === 'CLAUDE.local.md' || name === 'MEMORY.md' || path.includes('/.claude/') || path.startsWith('.claude/');
+}
+
 /** Line types written by Claude Code that the profiler does not need. */
 const IGNORED_TYPES = new Set([
   'queue-operation', 'api-request', 'api-request-blob', 'api-request-shape', 'file-history-snapshot',
@@ -271,7 +279,10 @@ class SessionParser {
       if (tool.success) {
         const { id, name, input } = tool.data;
         state.pending.set(id, { name, input, cwd: line.wireIngestContext?.[id]?.cwd ?? line.cwd, timestamp: line.timestamp });
-        collectStrings(input, this.agentText);
+        // Writing a memory file is not using it: keep its path, not the text written into it.
+        const target = typeof input.file_path === 'string' ? input.file_path : undefined;
+        if (FILE_WRITERS.has(name) && target !== undefined && isMemoryFile(target)) this.agentText.push(target);
+        else collectStrings(input, this.agentText);
       }
     }
     return true;

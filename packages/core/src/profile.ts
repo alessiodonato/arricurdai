@@ -1,7 +1,7 @@
 import { posix } from 'node:path';
 import { type CostParams, DEFAULT_COST_PARAMS } from './config';
 import { maxSavings, sumUsage, weightedCost } from './cost';
-import { classifyMemoryLines, type MemoryCost, type MemoryLine, memoryLoadCosts } from './memory';
+import { classifyMemoryLines, type MemoryCost, type MemoryDocument, type MemoryLine, memoryLoadCosts } from './memory';
 import { type ChangeOracle, judgeReads, type ReadVerdict } from './rediscovery';
 import { type MemoryFileReport, type RediscoveryReport, type Report, reportSchema, type SessionReport } from './report';
 import type { ProfileInput, ProfileSession, SessionMemory } from './session';
@@ -124,15 +124,20 @@ function groupMemory(measures: readonly SessionMeasure[], root: string): MemoryF
   return [...files.values()].map(({ seenIn: _, ...file }) => file).sort((a, b) => b.cost - a.cost || a.path.localeCompare(b.path));
 }
 
-/** The latest content of every memory file loaded in the window, by path. */
-function latestMemoryFiles(sessions: readonly ProfileSession[], root: string): { file: string; content: string }[] {
-  const latest = new Map<string, string>();
+/** Every memory file loaded in the window: its latest content, and the sessions that loaded it. */
+function latestMemoryFiles(sessions: readonly ProfileSession[], root: string): MemoryDocument[] {
+  const latest = new Map<string, { content: string; loadedIn: Set<string> }>();
   for (const session of sessions) {
     for (const context of [session.main, ...session.subagents]) {
-      for (const load of context.memory) latest.set(load.path, load.content);
+      for (const load of context.memory) {
+        const document = latest.get(load.path) ?? { content: load.content, loadedIn: new Set<string>() };
+        document.content = load.content;
+        document.loadedIn.add(session.sessionId);
+        latest.set(load.path, document);
+      }
     }
   }
-  return [...latest].map(([path, content]) => ({ file: relativeTo(root, path), content }));
+  return [...latest].map(([path, { content, loadedIn }]) => ({ file: relativeTo(root, path), content, loadedIn }));
 }
 
 const toLineReport = ({ file, line, text, terms }: MemoryLine) => ({ file, line, text, terms });

@@ -1,0 +1,1 @@
+A user reports that editing a CSS file imported by a component triggers a full page reload instead of an HMR update. Without changing any code, explain from the source which code path decides between an update and a full reload for that case, and what could cause the full reload.

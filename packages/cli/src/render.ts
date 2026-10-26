@@ -113,7 +113,8 @@ export function renderReport(report: Report, options: RenderOptions): string {
     if (unusedLines.length > maxLines) out.push(`  ${c.dim(`… ${unusedLines.length - maxLines} more with --json`)}`);
   }
   if (unverifiableLines.length > 0) {
-    out.push(`  ${c.dim(`${unverifiableLines.length} lines have nothing to check, such as rules of style. They are listed with --json.`)}`);
+    const one = unverifiableLines.length === 1;
+    out.push(`  ${c.dim(`${unverifiableLines.length} ${one ? 'line has' : 'lines have'} nothing to check, such as a rule of style. ${one ? 'It is' : 'They are'} listed with --json.`)}`);
   }
   return `${out.join('\n')}\n`;
 }

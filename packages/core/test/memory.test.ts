@@ -55,7 +55,8 @@ describe('memoryLines', () => {
 });
 
 describe('classifyMemoryLines', () => {
-  const files = [{ file: 'CLAUDE.md', content: '- Use `pnpm test`.\n- Prices in `src/pricing.ts`.\n- Deploy with `deploy.sh`.\n- Be brief.' }];
+  const content = '- Use `pnpm test`.\n- Prices in `src/pricing.ts`.\n- Deploy with `deploy.sh`.\n- Be brief.';
+  const files = [{ file: 'CLAUDE.md', content, loadedIn: new Set(['s1', 's2']) }];
 
   test('a line is used when one of its terms appears in a tool call or an assistant message', () => {
     const usage = classifyMemoryLines(files, [session('s1', '2026-09-01', { agentText: ['pnpm test'] })]);
@@ -67,6 +68,12 @@ describe('classifyMemoryLines', () => {
   test('the paths an agent read count too, even when its command used a relative path', () => {
     const reading = session('s1', '2026-09-01', { main: context({ reads: [read('file:src/pricing.ts')] }) });
     expect(classifyMemoryLines(files, [reading]).used.map((l) => l.line)).toEqual([2]);
+  });
+
+  test('a session that did not load the file cannot use its lines', () => {
+    const onlyFirst = [{ file: 'CLAUDE.md', content, loadedIn: new Set(['s1']) }];
+    const sessions = [session('s1', '2026-09-01'), session('s2', '2026-09-02', { agentText: ['pnpm test'] })];
+    expect(classifyMemoryLines(onlyFirst, sessions).used).toEqual([]);
   });
 
   test('one session that uses a line is enough', () => {

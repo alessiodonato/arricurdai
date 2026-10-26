@@ -1,0 +1,1 @@
+A user says that with HandleMethodNotAllowed enabled, Gin returns 404 instead of 405 for a path that exists with another method. Without changing any code, explain from the source which conditions make Gin answer 405, and what could make it answer 404 instead.

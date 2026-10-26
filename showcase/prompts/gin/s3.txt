@@ -1,0 +1,1 @@
+Back on routing. When a new route conflicts with an existing wildcard route, Gin panics. Make sure the panic message names both the new path and the existing path it conflicts with. If it already does, tell me where and add a short comment explaining the conflict rule instead. Keep the change minimal, don't run tests or builds, and summarize what you changed.
