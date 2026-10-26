@@ -140,6 +140,10 @@ describe('memory', () => {
     expect(claudeMd.tokens).toBe(estimateTokens(claudeMd.content));
   });
 
+  test('knows the sessions record their memory, because they have attachment lines', () => {
+    expect(project.sessions.map((s) => s.recordsMemory)).toEqual([true, true, true]);
+  });
+
   test('records memory loaded on demand at the call where it entered', () => {
     const nested = c.main.memory.filter((m) => m.source === 'nested');
     expect(nested.map((m) => [m.path, m.turn])).toEqual([['/home/dev/acme-shop/src/db/CLAUDE.md', 5]]);

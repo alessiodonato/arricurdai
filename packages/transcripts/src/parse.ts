@@ -170,6 +170,7 @@ class SessionParser {
   readonly changes: FileChange[] = [];
   readonly agentText: string[] = [];
   readonly versions = new Set<string>();
+  recordsMemory = false;
   costState: Usage | undefined;
   entrypoint: string | undefined;
   startedAt: string | undefined;
@@ -320,6 +321,7 @@ class SessionParser {
     if (!parsed.success) return false;
     const line = parsed.data;
     const state = this.enter(line, subagentId);
+    if (subagentId === undefined) this.recordsMemory = true;
     const turn = state.context.calls.length + 1;
 
     if (line.attachment.type === 'instructions') {
@@ -424,6 +426,7 @@ export async function parseSession(files: SessionFiles, options: ParseOptions = 
     agentText: parser.agentText,
     costState: parser.costState,
     unrecordedUsage,
+    recordsMemory: parser.recordsMemory,
     stats: parser.stats,
   };
 }

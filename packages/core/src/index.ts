@@ -13,4 +13,29 @@ export {
   type LoadNowInput,
   type Usage,
 } from './cost';
+export { classifyMemoryLines, extractTerms, memoryLines, memoryLoadCosts, type LineUsage, type MemoryCost, type MemoryLine } from './memory';
+export { DEFAULT_SESSION_WINDOW, profile, type DiskMemoryFile, type ProfileOptions } from './profile';
+export { judgeReads, turnsInContext, type ChangeOracle, type ReadVerdict } from './rediscovery';
+export {
+  memoryFileReportSchema,
+  memoryLineReportSchema,
+  rediscoveryReportSchema,
+  reportSchema,
+  sessionReportSchema,
+  type MemoryFileReport,
+  type MemoryLineReport,
+  type RediscoveryReport,
+  type Report,
+  type SessionReport,
+} from './report';
+export type {
+  LineStatsInput,
+  ProfileInput,
+  ProfileSession,
+  ReadKind,
+  SessionChange,
+  SessionContext,
+  SessionMemory,
+  SessionRead,
+} from './session';
 export { estimateTokens } from './tokens';

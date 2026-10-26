@@ -1,4 +1,5 @@
 import { posix } from 'node:path';
+import type { ReadKind } from '@arricurdai/core';
 
 type Token =
   | { type: 'word'; value: string }
@@ -154,7 +155,7 @@ export function resolvePath(dir: string, path: string): string {
   return posix.resolve(dir, path);
 }
 
-export type ReadKind = 'file' | 'search' | 'list';
+export type { ReadKind };
 
 /** A read found in a tool call, with absolute paths. */
 export interface RawRead {

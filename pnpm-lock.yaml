@@ -21,6 +21,15 @@ importers:
         specifier: ^4.1.12
         version: 4.1.12(@types/node@20.19.43)(vite@8.3.5(@types/node@20.19.43)(esbuild@0.27.7))
 
+  packages/cli:
+    dependencies:
+      '@arricurdai/core':
+        specifier: workspace:*
+        version: link:../core
+      '@arricurdai/transcripts':
+        specifier: workspace:*
+        version: link:../transcripts
+
   packages/core:
     dependencies:
       zod:

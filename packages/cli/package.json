@@ -1,0 +1,21 @@
+{
+  "name": "arricurdai",
+  "version": "0.0.0",
+  "description": "Measures what a Claude Code project spends on context it already knew.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup && tsc -p tsconfig.build.json",
+    "test": "tsc --noEmit && vitest run"
+  },
+  "dependencies": {
+    "@arricurdai/core": "workspace:*",
+    "@arricurdai/transcripts": "workspace:*"
+  }
+}

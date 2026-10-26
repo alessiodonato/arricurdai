@@ -1,4 +1,12 @@
-import type { CacheTtl, Usage } from '@arricurdai/core';
+import type {
+  CacheTtl,
+  ProfileSession,
+  SessionChange,
+  SessionContext,
+  SessionMemory,
+  SessionRead,
+  Usage,
+} from '@arricurdai/core';
 import type { ReadTarget } from './reads';
 
 /** One API call: one distinct `message.id` in the assistant lines. */
@@ -12,7 +20,7 @@ export interface Call {
 }
 
 /** A context read: a tool result that brought existing context into the conversation. */
-export interface ContextRead extends ReadTarget {
+export interface ContextRead extends ReadTarget, SessionRead {
   /** Matches the same read across sessions. */
   key: string;
   /** Estimated tokens that entered the context. A command that reads several targets splits its result evenly. */
@@ -30,7 +38,7 @@ export interface ContextRead extends ReadTarget {
 }
 
 /** A memory file that Claude Code put into the context. */
-export interface MemoryLoad {
+export interface MemoryLoad extends SessionMemory {
   path: string;
   /** `Project`, `Local`, `User`, `AutoMem`, … as Claude Code records it. */
   type: string;
@@ -44,7 +52,7 @@ export interface MemoryLoad {
 }
 
 /** A file written by a tool call that succeeded. */
-export interface FileChange {
+export interface FileChange extends SessionChange {
   /** Relative to the project root, or absolute when outside it. */
   path: string;
   tool: string;
@@ -52,7 +60,7 @@ export interface FileChange {
 }
 
 /** A conversation context: the main session, or one subagent. */
-export interface Context {
+export interface Context extends SessionContext {
   kind: 'main' | 'subagent';
   agentId: string | undefined;
   agentType: string | undefined;
@@ -83,7 +91,7 @@ export interface LineStats {
   orphanResults: number;
 }
 
-export interface ParsedSession {
+export interface ParsedSession extends ProfileSession {
   sessionId: string;
   file: string;
   /** Absolute folder that paths are relative to: the option, or the session's first `cwd`. */
@@ -101,6 +109,8 @@ export interface ParsedSession {
   costState: Usage | undefined;
   /** Usage in `cost-state` that no assistant line records, such as compaction calls. */
   unrecordedUsage: Usage | undefined;
+  /** The main transcript has attachment lines, so it records which memory files were loaded. */
+  recordsMemory: boolean;
   stats: LineStats;
 }
 
