@@ -3,671 +3,618 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>arricurdAI: agent memory that pays for itself</title>
-<meta name="description" content="arricurdAI is an open-source memory layer for coding agents. It decides which memories enter the context, in what form and when, and measures whether each one saves more tokens than it costs.">
+<title>arricurdAI: stop paying twice for the same context</title>
+<meta name="description" content="arricurdAI reads your Claude Code transcripts on your machine, shows where the tokens go, and stops the most expensive habit: resuming a large session after its prompt cache expired. Local, no network, no telemetry.">
+<meta property="og:title" content="arricurdAI">
+<meta property="og:description" content="See where your Claude Code tokens go, and stop paying twice for the same context.">
+<meta name="theme-color" content="#0b0f1a">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<!--
-  results.json (written by arricurdai-bench next to this file) must look like:
-  {
-    "version": "0.1.0", "date": "YYYY-MM-DD", "model": "<model id>",
-    "repos": 5, "sessions": 75,
-    "price_weights": { "w": 1.25, "r": 0.1, "mu": 5 },
-    "headline": { "vs": "native", "savings": 0.0, "ci": [0.0, 0.0], "success_delta_pt": 0.0 },
-    "arms": [ { "id": "none" | "native" | "arricurdai", "label": "...", "k_mean": 0, "k_ci": [0, 0], "success": 0.0, "turns_mean": 0 } ],
-    "per_repo": [ { "repo": "owner/name", "lang": "TypeScript", "k": { "none": 0, "native": 0, "arricurdai": 0 } } ]
-  }
-  Without results.json the page says the benchmark has not run yet. It never shows a savings figure that was not measured.
--->
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script>document.documentElement.classList.add('js');</script>
 <style>
-  :root {
-    --glaze: #F3F5F8;
-    --paper: #FFFFFF;
-    --ink: #16202C;
-    --ink-2: #4A5666;
-    --line: #D3D9E1;
-    --cobalt: #1D4E9E;
-    --on-cobalt: #FFFFFF;
-    --cobalt-soft: #DCE6F5;
-    --saffron: #D9940F;
-    --saffron-soft: #F8EBCB;
-    --code-bg: #1B2A3F;
-    --code-ink: #E6ECF4;
-    --display: 'Bricolage Grotesque', system-ui, sans-serif;
-    --body: 'Atkinson Hyperlegible', system-ui, sans-serif;
-    --mono: 'JetBrains Mono', ui-monospace, monospace;
-    color-scheme: light dark;
+:root {
+  --bg: #0b0f1a;
+  --bg-2: #10162a;
+  --card: rgba(255, 255, 255, 0.045);
+  --card-strong: rgba(255, 255, 255, 0.07);
+  --line: rgba(255, 255, 255, 0.11);
+  --text: #e9edf6;
+  --muted: #9ba5bf;
+  --lemon: #f7d154;
+  --coral: #ff6b5b;
+  --mint: #3ddc97;
+  --sky: #7db2ff;
+  --glow-1: rgba(247, 209, 84, 0.18);
+  --glow-2: rgba(255, 107, 91, 0.16);
+  --shadow: 0 24px 70px rgba(0, 0, 0, 0.45);
+  --radius: 20px;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans: 'Atkinson Hyperlegible', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --display: 'Bricolage Grotesque', var(--sans);
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #fbf8f1;
+    --bg-2: #f2ecdf;
+    --card: rgba(20, 24, 40, 0.035);
+    --card-strong: rgba(20, 24, 40, 0.06);
+    --line: rgba(20, 24, 40, 0.12);
+    --text: #151a2b;
+    --muted: #59607a;
+    --lemon: #a87a00;
+    --coral: #d4402d;
+    --mint: #0f8a5c;
+    --sky: #2c68d0;
+    --glow-1: rgba(247, 196, 54, 0.25);
+    --glow-2: rgba(255, 120, 100, 0.18);
+    --shadow: 0 24px 60px rgba(20, 24, 40, 0.12);
+    color-scheme: light;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --glaze: #0F1722;
-      --paper: #16212F;
-      --ink: #E8EDF3;
-      --ink-2: #A3AFBE;
-      --line: #2A3748;
-      --cobalt: #7FA6E8;
-      --on-cobalt: #0F1722;
-      --cobalt-soft: #1E3354;
-      --saffron: #F0B43A;
-      --saffron-soft: #3A2F16;
-      --code-bg: #0B121B;
-      --code-ink: #E6ECF4;
-    }
-  }
-  * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
-  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
-  body { margin: 0; background: var(--glaze); color: var(--ink); font: 400 1.0625rem/1.6 var(--body); }
-  a { color: var(--cobalt); text-underline-offset: 3px; }
-  :focus-visible { outline: 3px solid var(--saffron); outline-offset: 2px; border-radius: 2px; }
-  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+}
+:root[data-theme="dark"] { color-scheme: dark; }
 
-  /* Header */
-  .site-header { border-bottom: 1px solid var(--line); }
-  .site-header .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px 32px; min-height: 64px; flex-wrap: wrap; padding-top: 8px; padding-bottom: 8px; }
-  .wordmark { font: 700 1.375rem/1 var(--display); color: var(--ink); text-decoration: none; letter-spacing: -0.01em; }
-  .site-nav ul { display: flex; flex-wrap: wrap; gap: 4px 22px; list-style: none; margin: 0; padding: 0; }
-  .site-nav a { color: var(--ink-2); text-decoration: none; font-size: 0.9375rem; }
-  .site-nav a:hover { color: var(--ink); text-decoration: underline; }
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 17px/1.65 var(--sans);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+body::before {
+  content: '';
+  position: fixed;
+  inset: -20vh -20vw auto;
+  height: 90vh;
+  background:
+    radial-gradient(40vw 40vh at 20% 30%, var(--glow-1), transparent 70%),
+    radial-gradient(45vw 45vh at 85% 10%, var(--glow-2), transparent 70%);
+  filter: blur(20px);
+  pointer-events: none;
+  z-index: -1;
+}
+a { color: var(--sky); text-underline-offset: 3px; text-decoration-thickness: 1px; }
+a:hover { text-decoration-thickness: 2px; }
+.wrap { width: min(1120px, 100% - 32px); margin-inline: auto; }
+.small { font-size: 0.88rem; color: var(--muted); }
+.eyebrow {
+  margin: 0 0 12px;
+  font: 600 0.78rem/1 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lemon);
+}
+h1, h2, h3 { font-family: var(--display); line-height: 1.08; margin: 0; letter-spacing: -0.02em; }
+h2 { font-size: clamp(1.9rem, 4vw, 2.8rem); font-weight: 800; }
+h3 { font-size: 1.25rem; font-weight: 700; }
+code, pre { font-family: var(--mono); }
+:not(pre) > code { font-size: 0.9em; padding: 0.1em 0.4em; border-radius: 6px; background: var(--card-strong); border: 1px solid var(--line); }
+.grad {
+  background: linear-gradient(100deg, var(--lemon), var(--coral) 70%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
 
-  /* Type */
-  h1 { font: 700 clamp(2.25rem, 5vw, 3.6rem)/1.05 var(--display); letter-spacing: -0.02em; margin: 0 0 20px; max-width: 15ch; }
-  h2 { font: 700 clamp(1.625rem, 3vw, 2.25rem)/1.15 var(--display); letter-spacing: -0.015em; margin: 0 0 12px; max-width: 26ch; }
-  h3 { font: 600 1.1875rem/1.3 var(--display); margin: 0 0 6px; }
-  p { margin: 0 0 16px; max-width: 68ch; }
-  .lead { font-size: 1.1875rem; color: var(--ink-2); max-width: 62ch; margin-bottom: 32px; }
-  .small { font-size: 0.9375rem; color: var(--ink-2); }
-  code, .mono { font-family: var(--mono); font-size: 0.9em; }
+/* Navigation */
+nav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  backdrop-filter: saturate(160%) blur(14px);
+  -webkit-backdrop-filter: saturate(160%) blur(14px);
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  border-bottom: 1px solid var(--line);
+}
+nav .wrap { display: flex; align-items: center; gap: 24px; height: 64px; }
+.logo { font: 800 1.25rem/1 var(--display); color: var(--text); text-decoration: none; letter-spacing: -0.02em; }
+.logo span { color: var(--coral); }
+.nav-links { display: flex; gap: 20px; margin-left: auto; }
+.nav-links a { color: var(--muted); text-decoration: none; font-size: 0.95rem; }
+.nav-links a:hover { color: var(--text); }
+@media (max-width: 760px) { .nav-links { display: none; } nav .btn { margin-left: auto; } }
 
-  /* Grid children may shrink below their content, so wide charts and tables scroll inside their box */
-  .hero > *, .compare > *, .threshold > *, .start-grid > *, .steps > * { min-width: 0; }
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-radius: 999px;
+  font-weight: 700;
+  text-decoration: none;
+  border: 1px solid var(--line);
+  color: var(--text);
+  background: var(--card);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.btn:hover { transform: translateY(-1px); background: var(--card-strong); }
+.btn.primary { background: linear-gradient(100deg, var(--lemon), var(--coral)); color: #1a1205; border: 0; }
+.btn.small-btn { padding: 8px 14px; font-size: 0.9rem; }
 
-  /* Sections */
-  .block { padding: 80px 0; border-top: 1px solid var(--line); }
+/* Hero */
+.hero { display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px; align-items: center; padding: 88px 0 56px; }
+.hero > * { min-width: 0; }
+.hero h1 { font-size: clamp(2.6rem, 6.4vw, 4.6rem); font-weight: 800; }
+.lead { font-size: 1.18rem; color: var(--muted); margin: 22px 0 30px; max-width: 34em; }
+.cta { display: flex; flex-wrap: wrap; gap: 12px; }
+.name-note { margin: 26px 0 0; font-size: 0.9rem; color: var(--muted); }
+@media (max-width: 900px) { .hero { grid-template-columns: 1fr; padding-top: 56px; } }
 
-  /* Hero */
-  .hero { display: grid; grid-template-columns: 1.05fr 1fr; gap: 56px; align-items: start; padding: 72px 0 80px; }
-  @media (max-width: 900px) { .hero { grid-template-columns: 1fr; gap: 40px; padding-top: 48px; } }
-  .hero .intro { font-size: 1.1875rem; color: var(--ink-2); max-width: 52ch; }
-  .name-note { font-size: 0.9375rem; color: var(--ink-2); }
-  .buttons { display: flex; flex-wrap: wrap; gap: 12px; margin: 28px 0 18px; }
-  .btn { display: inline-block; padding: 12px 20px; border-radius: 6px; font-weight: 700; text-decoration: none; border: 2px solid var(--cobalt); line-height: 1.2; }
-  .btn-primary { background: var(--cobalt); color: var(--on-cobalt); }
-  .btn-secondary { background: transparent; color: var(--cobalt); }
-  .btn-primary:hover, .btn-secondary:hover { filter: brightness(1.08); }
-  .hero-status { font-size: 0.9375rem; color: var(--ink-2); max-width: 52ch; }
-  .hero-status strong { color: var(--ink); }
+.terminal {
+  border-radius: var(--radius);
+  background: #0a0d17;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  transform: rotate(0.6deg);
+}
+.term-bar { display: flex; align-items: center; gap: 7px; padding: 12px 16px; background: #121729; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+.term-bar span { width: 11px; height: 11px; border-radius: 50%; background: #ff5f57; }
+.term-bar span:nth-child(2) { background: #febc2e; }
+.term-bar span:nth-child(3) { background: #28c840; }
+.term-bar p { margin: 0 0 0 10px; font: 0.78rem var(--mono); color: #8a93ad; }
+.terminal pre { margin: 0; padding: 20px 22px 24px; font-size: 0.82rem; line-height: 1.7; color: #d7dcea; white-space: pre-wrap; word-break: break-word; }
+.t-dim { color: #6c7590; }
+.t-coral { color: #ff7b6b; }
+.t-lemon { color: #f7d154; }
+.t-mint { color: #3ddc97; }
 
-  /* Panels and controls */
-  .panel { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 24px; }
-  .panel-title { font: 600 1.25rem/1.3 var(--display); margin: 0 0 18px; }
-  .control { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; margin-bottom: 14px; }
-  .control label { font-size: 0.9375rem; }
-  .control output { font-family: var(--mono); font-size: 0.9375rem; }
-  .control input { grid-column: 1 / -1; width: 100%; accent-color: var(--cobalt); margin: 4px 0 0; }
-  .figure { font: 700 2.5rem/1 var(--display); letter-spacing: -0.02em; margin: 20px 0 6px; }
-  .figure-sub { color: var(--ink-2); margin: 0; }
-  .formula { font-family: var(--mono); font-size: 0.875rem; background: var(--glaze); border-radius: 6px; padding: 10px 12px; margin: 16px 0 0; }
+/* Stats */
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; padding-bottom: 40px; }
+.stat { padding: 22px; border-radius: var(--radius); background: var(--card); border: 1px solid var(--line); }
+.stat b { display: block; font: 800 2.3rem/1 var(--display); letter-spacing: -0.03em; margin-bottom: 8px; }
+.stat p { margin: 0; font-size: 0.92rem; color: var(--muted); }
+.stat:nth-child(1) b { color: var(--sky); }
+.stat:nth-child(2) b { color: var(--coral); }
+.stat:nth-child(3) b { color: var(--mint); }
+.stat:nth-child(4) b { color: var(--lemon); }
+@media (max-width: 900px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 480px) { .stats { grid-template-columns: 1fr; } }
 
-  /* Rent tiles */
-  .tiles { display: grid; grid-template-columns: repeat(20, 1fr); gap: 3px; margin: 20px 0 12px; }
-  .tile { aspect-ratio: 1; border-radius: 2px; border: 1px solid var(--line); background: transparent; }
-  .tile.write { background: var(--saffron); border-color: var(--saffron); }
-  .tile.read { background: var(--cobalt); border-color: var(--cobalt); }
-  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.875rem; color: var(--ink-2); margin: 0; padding: 0; list-style: none; }
-  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -1px; margin-right: 6px; border: 1px solid var(--line); }
-  .swatch.write { background: var(--saffron); border-color: var(--saffron); }
-  .swatch.read { background: var(--cobalt); border-color: var(--cobalt); }
+/* Sections */
+.section { padding: 72px 0; }
+.section-head { max-width: 760px; margin-bottom: 36px; }
+.section-head p:not(.eyebrow) { color: var(--muted); font-size: 1.08rem; margin: 16px 0 0; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 26px; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.grid-3 > * { min-width: 0; }
+@media (max-width: 900px) { .grid-3 { grid-template-columns: 1fr; } }
+.step-num {
+  display: inline-grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  margin-bottom: 16px;
+  font: 800 1rem var(--display);
+  color: #1a1205;
+  background: linear-gradient(135deg, var(--lemon), var(--coral));
+}
+.card h3 + p { margin: 10px 0 0; color: var(--muted); }
 
-  /* Worked example */
-  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
-  @media (max-width: 900px) { .compare { grid-template-columns: 1fr; } }
-  .ledger { list-style: none; margin: 16px 0 0; padding: 0; }
-  .ledger li { padding: 10px 0; border-bottom: 1px solid var(--line); }
-  .ledger .line { display: flex; justify-content: space-between; gap: 16px; }
-  .ledger .what { font-size: 0.9375rem; }
-  .ledger .paid { font-family: var(--mono); font-size: 0.875rem; white-space: nowrap; }
-  .ledger .loaded { font-size: 0.8125rem; color: var(--ink-2); }
-  .bar { height: 8px; border-radius: 2px; margin-top: 6px; background: var(--cobalt); min-width: 2px; }
-  .with .bar { background: var(--saffron); }
-  .total { display: flex; justify-content: space-between; gap: 16px; font-weight: 700; padding-top: 12px; border-top: 2px solid var(--ink); margin-top: -1px; }
-  .outcome { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; margin-top: 40px; }
-  .outcome .figure { margin: 0; }
-  .note { font-size: 0.9375rem; color: var(--ink-2); border-left: 3px solid var(--line); padding-left: 14px; max-width: 70ch; margin-top: 24px; }
+/* Calculator */
+.calc { display: grid; grid-template-columns: 1fr 1.1fr; gap: 36px; align-items: center; }
+.calc > * { min-width: 0; }
+@media (max-width: 900px) { .calc { grid-template-columns: 1fr; } }
+.controls { display: grid; gap: 22px; }
+.controls label { display: grid; gap: 8px; font-weight: 700; font-size: 0.95rem; }
+.controls output { font: 600 0.88rem var(--mono); color: var(--lemon); }
+.label-row { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+select {
+  font: inherit;
+  font-weight: 400;
+  color: var(--text);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+input[type="range"] { width: 100%; accent-color: var(--coral); }
+.results { display: grid; gap: 16px; }
+.bar-row { display: grid; grid-template-columns: 150px 1fr 80px; gap: 12px; align-items: center; }
+.bar-row span { font-size: 0.95rem; }
+.bar-row b { font: 800 1.15rem var(--display); text-align: right; }
+.bar { height: 16px; border-radius: 999px; background: var(--card-strong); overflow: hidden; }
+.bar i { display: block; height: 100%; border-radius: inherit; transition: width 0.35s ease; }
+.bar i.coral { background: linear-gradient(90deg, var(--coral), #ff9b6b); }
+.bar i.mint { background: linear-gradient(90deg, var(--mint), #8af0c5); }
+.bar i.sky { background: linear-gradient(90deg, var(--sky), #a9cbff); }
+.saving { margin: 6px 0 0; font: 800 1.6rem/1.2 var(--display); }
+.saving strong { color: var(--mint); }
+@media (max-width: 520px) { .bar-row { grid-template-columns: 1fr 70px; } .bar-row .bar { grid-column: 1 / -1; grid-row: 2; } }
 
-  /* Threshold */
-  .threshold { display: grid; grid-template-columns: 320px 1fr; gap: 40px; align-items: start; }
-  @media (max-width: 900px) { .threshold { grid-template-columns: 1fr; } }
-  .verdict { font: 700 1.5rem/1.2 var(--display); margin: 18px 0 4px; }
-  .chart-scroll { overflow-x: auto; }
-  .chart { width: 100%; min-width: 560px; height: auto; display: block; }
-  .chart text { fill: var(--ink-2); font: 13px var(--body); }
-  .chart .axis { stroke: var(--line); }
-  .chart .curve { stroke: var(--cobalt); stroke-width: 2.5; fill: none; }
-  .chart .mem { stroke: var(--saffron); stroke-width: 2; stroke-dasharray: 6 5; }
-  .chart .dot { fill: var(--cobalt); stroke: var(--paper); stroke-width: 2; }
+/* Tools */
+.tool { display: flex; flex-direction: column; gap: 12px; }
+.tool .tag { align-self: flex-start; font: 600 0.75rem var(--mono); padding: 5px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.tool p { margin: 0; color: var(--muted); }
+.tool pre { margin: auto 0 0; }
 
-  /* Steps */
-  .steps { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 32px; counter-reset: step; }
-  @media (max-width: 900px) { .steps { grid-template-columns: 1fr 1fr; } }
-  @media (max-width: 560px) { .steps { grid-template-columns: 1fr; } }
-  .steps li { counter-increment: step; border-top: 3px solid var(--cobalt); padding-top: 14px; }
-  .steps li::before { content: counter(step); display: block; font: 700 1.75rem/1 var(--display); color: var(--cobalt); margin-bottom: 10px; }
-  .steps p { font-size: 0.9375rem; color: var(--ink-2); margin: 0; }
+/* Code blocks */
+.code { position: relative; }
+.code pre {
+  margin: 0;
+  padding: 18px 20px;
+  border-radius: 14px;
+  background: #0a0d17;
+  color: #d7dcea;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 0.84rem;
+  line-height: 1.6;
+  overflow-x: auto;
+}
+.copy {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font: 600 0.75rem var(--mono);
+  color: #c9d0e3;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 5px 9px;
+  cursor: pointer;
+}
+.copy:hover { background: rgba(255, 255, 255, 0.16); }
 
-  /* Benchmark */
-  .method { margin: 0 0 32px; padding-left: 20px; max-width: 70ch; }
-  .method li { margin-bottom: 8px; }
-  .results-empty p { margin-bottom: 12px; }
-  .sample-banner { background: var(--saffron-soft); border: 1px solid var(--saffron); border-radius: 6px; padding: 10px 14px; font-weight: 700; margin-bottom: 20px; }
-  .headline { font: 700 clamp(1.75rem, 4vw, 2.75rem)/1.1 var(--display); letter-spacing: -0.02em; margin: 0 0 8px; }
-  .link-button { font: inherit; font-weight: 700; color: var(--cobalt); background: none; border: 2px solid var(--cobalt); border-radius: 6px; padding: 10px 16px; cursor: pointer; }
-  #baseline .method { margin-top: 28px; }
+/* Evidence */
+.evidence { display: grid; grid-template-columns: 1.15fr 1fr; gap: 24px; }
+.evidence > * { min-width: 0; }
+@media (max-width: 900px) { .evidence { grid-template-columns: 1fr; } }
+.chart { display: grid; gap: 14px; }
+.chart .bar-row { grid-template-columns: 170px 1fr 64px; }
+@media (max-width: 520px) { .chart .bar-row { grid-template-columns: 1fr 64px; } }
+.chart .bar { height: 22px; }
+.badge { display: inline-block; margin-left: 6px; font: 700 0.75rem var(--mono); color: var(--mint); }
+.findings { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+.findings li { padding: 18px 20px; border-radius: 16px; background: var(--card); border: 1px solid var(--line); }
+.findings b { display: block; margin-bottom: 4px; }
+.findings span { color: var(--muted); font-size: 0.95rem; }
 
-  /* Tables */
-  .table-wrap { overflow-x: auto; }
-  table { width: 100%; min-width: 600px; border-collapse: collapse; font-size: 0.9375rem; }
-  th, td { text-align: left; padding: 12px 14px 12px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th { font-weight: 700; }
-  td.num, th.num { text-align: right; font-family: var(--mono); font-size: 0.875rem; padding-right: 0; padding-left: 14px; white-space: nowrap; }
+/* Tables */
+.table-wrap { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--line); background: var(--card); }
+table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+th, td { padding: 14px 16px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font: 600 0.78rem var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+tr:last-child td { border-bottom: 0; }
+td.num { font-family: var(--mono); text-align: right; }
+th.num { text-align: right; }
 
-  /* Code */
-  pre { background: var(--code-bg); color: var(--code-ink); border-radius: 8px; padding: 16px 18px; overflow-x: auto; font: 400 0.9375rem/1.5 var(--mono); margin: 12px 0 8px; max-width: 720px; }
-  .start-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
-  @media (max-width: 900px) { .start-grid { grid-template-columns: 1fr; } }
+/* Start */
+.start { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.start > * { min-width: 0; }
+@media (max-width: 900px) { .start { grid-template-columns: 1fr; } }
+.start h3 { margin-bottom: 12px; }
+.start p { color: var(--muted); }
 
-  /* Footer */
-  .site-footer { border-top: 1px solid var(--line); padding: 32px 0 48px; font-size: 0.9375rem; color: var(--ink-2); }
-  .site-footer p { margin: 0 0 6px; }
+/* Roadmap */
+.roadmap { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; counter-reset: phase; }
+.roadmap > * { min-width: 0; }
+@media (max-width: 900px) { .roadmap { grid-template-columns: 1fr; } }
+.phase { position: relative; }
+.phase .status { font: 700 0.78rem var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.phase.done .status { color: var(--mint); }
+.phase.next { border-style: dashed; }
+.phase.next .status { color: var(--lemon); }
+.phase h3 { margin: 10px 0 8px; }
+.phase p { margin: 0; color: var(--muted); }
+
+footer { padding: 48px 0 64px; border-top: 1px solid var(--line); margin-top: 40px; }
+footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 20px; color: var(--muted); font-size: 0.92rem; }
+.foot-links { display: flex; flex-wrap: wrap; gap: 18px; }
+
+/* Reveal on scroll */
+.js .reveal { opacity: 0; transform: translateY(18px); transition: opacity 0.6s ease, transform 0.6s ease; }
+.js .reveal.in { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .js .reveal { opacity: 1; transform: none; transition: none; }
+  html { scroll-behavior: auto; }
+  .bar i { transition: none; }
+}
 </style>
 </head>
 <body>
 
-<header class="site-header">
+<nav aria-label="Main">
   <div class="wrap">
-    <a class="wordmark" href="#top">arricurdAI</a>
-    <nav class="site-nav" aria-label="Main">
-      <ul>
-        <li><a href="#example">Example</a></li>
-        <li><a href="#threshold">Load now or later</a></li>
-        <li><a href="#how">How it works</a></li>
-        <li><a href="#benchmark">Benchmark</a></li>
-        <li><a href="#baseline">Baseline</a></li>
-        <li><a href="#start">Get started</a></li>
-        <li><a data-repo="" href="#">GitHub</a></li>
-      </ul>
-    </nav>
+    <a class="logo" href="#top">arricurd<span>AI</span></a>
+    <div class="nav-links">
+      <a href="#why">Why</a>
+      <a href="#calculator">Calculator</a>
+      <a href="#tools">Tools</a>
+      <a href="#evidence">Evidence</a>
+      <a href="#start">Start</a>
+    </div>
+    <a class="btn small-btn" data-repo="" href="#">GitHub</a>
+  </div>
+</nav>
+
+<header class="hero wrap" id="top">
+  <div>
+    <p class="eyebrow">Open source · local · for Claude Code</p>
+    <h1>Stop paying twice for the <span class="grad">same context</span>.</h1>
+    <p class="lead">Every call to the model sends the whole conversation again. arricurdAI reads your Claude Code transcripts on your machine, shows where the tokens go, and stops the most expensive habit of all: resuming a large session after its prompt cache expired.</p>
+    <div class="cta">
+      <a class="btn primary" href="#start">Get started</a>
+      <a class="btn" href="#calculator">Try the calculator</a>
+    </div>
+    <p class="name-note">The name comes from <em>arricurdari</em>, Sicilian for “to remember”.</p>
+  </div>
+  <div class="terminal" role="img" aria-label="Example: the guard stops a prompt after a long pause and shows what going on would cost">
+    <div class="term-bar"><span></span><span></span><span></span><p>claude · ~/my-project</p></div>
+<pre><code><span class="t-dim">&gt;</span> What should we do next?
+<span class="t-coral">⏺ UserPromptSubmit operation blocked by hook:</span>
+  arricurdai: this session was idle for 19h 12m and its
+  prompt cache expired. Your prompt would write its
+  <b>412,000</b> tokens of context to the cache again,
+  about <b class="t-lemon">$3.30</b>, and every later call would read them.
+  Run /clear to start a new session: arricurdai will
+  give it a note on this one. Or send the prompt again.
+<span class="t-dim">&gt;</span> /clear
+<span class="t-mint">⏺ New session, with a note on the old one:
+  about 1,000 tokens instead of 412,000.</span></code></pre>
   </div>
 </header>
 
-<main id="top">
-  <div class="wrap">
-    <section class="hero" aria-labelledby="hero-title">
-      <div>
-        <h1 id="hero-title">Your agent pays for its memory on every turn.</h1>
-        <p class="intro">arricurdAI is an open-source memory layer for coding agents. It decides which memories enter the context, in what form and when, and it measures whether each one saves more tokens than it costs.</p>
-        <p class="name-note">The name comes from arricurdari, Sicilian for “to remember”.</p>
-        <div class="buttons">
-          <a class="btn btn-primary" href="#start">Measure your project</a>
-          <a class="btn btn-secondary" href="#benchmark">Read the method</a>
-        </div>
-        <p class="hero-status" id="hero-status">Benchmark not published yet. This page shows no savings figure until it has been measured.</p>
-      </div>
+<section class="wrap stats" aria-label="Key numbers">
+  <div class="stat reveal"><b>0.05×</b><p>the input price, to read a token from the cache on Claude 5 models.</p></div>
+  <div class="stat reveal"><b>2×</b><p>the input price, to write the whole context again once the one-hour cache expires.</p></div>
+  <div class="stat reveal"><b>−40%</b><p>cost of a new session with a note, against one long session, with a pause before each step.</p></div>
+  <div class="stat reveal"><b>0</b><p>network calls. It reads local files, sends no telemetry and uses no model.</p></div>
+</section>
 
-      <div class="panel" aria-labelledby="meter-title">
-        <h2 class="panel-title" id="meter-title">What a memory really costs</h2>
-        <div class="control">
-          <label for="m-size">Memory size</label>
-          <output id="m-size-out" for="m-size"></output>
-          <input type="range" id="m-size" min="200" max="20000" step="100" value="3000">
-        </div>
-        <div class="control">
-          <label for="m-turns">Session length</label>
-          <output id="m-turns-out" for="m-turns"></output>
-          <input type="range" id="m-turns" min="2" max="100" step="1" value="40">
-        </div>
-        <div class="control">
-          <label for="m-at">Loaded at turn</label>
-          <output id="m-at-out" for="m-at"></output>
-          <input type="range" id="m-at" min="1" max="40" step="1" value="1">
-        </div>
-        <p class="figure" id="m-paid" aria-live="polite"></p>
-        <p class="figure-sub" id="m-paid-sub"></p>
-        <div class="tiles" id="m-tiles" aria-hidden="true"></div>
-        <ul class="legend">
-          <li><span class="swatch write"></span>Written to the cache once, at 1.25×</li>
-          <li><span class="swatch read"></span>Read again on each later turn, at 0.1×</li>
-          <li><span class="swatch"></span>Not loaded yet</li>
-        </ul>
-        <p class="formula">paid = size × (1.25 + 0.1 × turns after loading)</p>
-      </div>
-    </section>
+<section class="wrap section" id="why">
+  <div class="section-head reveal">
+    <p class="eyebrow">Why sessions get expensive</p>
+    <h2>The context is paid for on every call.</h2>
+    <p>A coding agent sends the model everything it has read and said so far, on every call. The prompt cache makes that cheaper, but not free, and it forgets after an hour.</p>
   </div>
+  <div class="grid-3">
+    <article class="card reveal">
+      <span class="step-num">1</span>
+      <h3>Each call reads it all again</h3>
+      <p>A session that has gathered 500,000 tokens pays to read all of them on every call: about $0.10 per call with Opus 5.5, before the model writes a word.</p>
+    </article>
+    <article class="card reveal">
+      <span class="step-num">2</span>
+      <h3>A pause empties the cache</h3>
+      <p>After an hour away, the next prompt writes the whole context to the cache again, at twice the input price. That one call costs as much as reading the context forty times.</p>
+    </article>
+    <article class="card reveal">
+      <span class="step-num">3</span>
+      <h3>Start fresh, carry a note</h3>
+      <p>A new session starts from the system prompt and a short note on the old one. The agent reads files again only when it needs them, so every later call is cheaper too.</p>
+    </article>
+  </div>
+</section>
 
-  <section class="block" id="example" aria-labelledby="example-title">
-    <div class="wrap">
-      <h2 id="example-title">Session two on the same repository</h2>
-      <p class="lead">The agent comes back to code it explored yesterday. Without memory it reads the same files again. With arricurdAI it gets two pointers, one note and only the lines it has to change.</p>
-      <div class="compare">
-        <div class="without">
-          <h3>Without memory</h3>
-          <ul class="ledger" id="ex-without"></ul>
-          <div class="total"><span>Paid</span><span class="mono" id="ex-without-total"></span></div>
-        </div>
-        <div class="with">
-          <h3>With arricurdAI</h3>
-          <ul class="ledger" id="ex-with"></ul>
-          <div class="total"><span>Paid</span><span class="mono" id="ex-with-total"></span></div>
-        </div>
-      </div>
-      <div class="outcome">
-        <p class="figure" id="ex-saving"></p>
-        <p class="figure-sub">fewer tokens on the part of the session that rebuilds known context</p>
-      </div>
-      <p class="note">This is a calculation, not a measurement: a 30-turn session where the context is loaded at turn 3, priced with the formula above, plus one extra round trip of 0.1 × 15,000 + 300 tokens to fetch the note. The rest of the session, writing code and reading new files, costs the same in both cases. Measured numbers come from the benchmark below.</p>
+<section class="wrap section" id="calculator">
+  <div class="section-head reveal">
+    <p class="eyebrow">Try it</p>
+    <h2>Continue, or start fresh?</h2>
+    <p>You come back to a session after more than an hour. This is what the next calls cost in context. Output and new content cost the same either way, so they are left out.</p>
+  </div>
+  <div class="card calc reveal">
+    <div class="controls">
+      <label for="model">Model
+        <select id="model">
+          <option value="4" selected>Opus 5.5: $4 per million input tokens</option>
+          <option value="2">Sonnet 5.5: $2 per million input tokens</option>
+        </select>
+      </label>
+      <label for="ctx"><span class="label-row">Context of the session <output id="ctxOut" for="ctx"></output></span>
+        <input id="ctx" type="range" min="50000" max="1000000" step="10000" value="300000">
+      </label>
+      <label for="calls"><span class="label-row">Calls after you come back <output id="callsOut" for="calls"></output></span>
+        <input id="calls" type="range" min="1" max="300" step="1" value="40">
+      </label>
+      <label for="start-size"><span class="label-row">A new session starts at, note included <output id="startOut" for="start-size"></output></span>
+        <input id="start-size" type="range" min="10000" max="80000" step="1000" value="30000">
+      </label>
     </div>
-  </section>
+    <div class="results" aria-live="polite">
+      <div class="bar-row"><span>Continue here</span><div class="bar"><i id="barA" class="coral"></i></div><b id="costA"></b></div>
+      <div class="bar-row"><span>Start fresh with a note</span><div class="bar"><i id="barB" class="mint"></i></div><b id="costB"></b></div>
+      <p class="saving" id="saving"></p>
+      <p class="small" id="explain"></p>
+    </div>
+  </div>
+</section>
 
-  <section class="block" id="threshold" aria-labelledby="threshold-title">
-    <div class="wrap">
-      <h2 id="threshold-title">Load it now, or wait until it is needed?</h2>
-      <p class="lead">Waiting is not free. Fetching later costs an extra round trip, and every round trip re-reads the whole conversation. arricurdAI loads a memory up front only when that costs less than the trip it would probably need later.</p>
-      <div class="threshold">
-        <div class="panel">
-          <div class="control">
-            <label for="t-size">Memory size</label>
-            <output id="t-size-out" for="t-size"></output>
-            <input type="range" id="t-size" min="100" max="10000" step="100" value="1500">
-          </div>
-          <div class="control">
-            <label for="t-p">Chance it is needed</label>
-            <output id="t-p-out" for="t-p"></output>
-            <input type="range" id="t-p" min="5" max="95" step="5" value="50">
-          </div>
-          <div class="control">
-            <label for="t-ctx">Conversation so far</label>
-            <output id="t-ctx-out" for="t-ctx"></output>
-            <input type="range" id="t-ctx" min="0" max="200000" step="5000" value="60000">
-          </div>
-          <div class="control">
-            <label for="t-left">Turns left</label>
-            <output id="t-left-out" for="t-left"></output>
-            <input type="range" id="t-left" min="1" max="100" step="1" value="20">
-          </div>
-          <p class="verdict" id="t-verdict" aria-live="polite"></p>
-          <p class="figure-sub" id="t-detail"></p>
-        </div>
-        <div>
-          <div class="chart-scroll"><svg class="chart" id="t-chart" viewBox="0 0 640 300" role="img" aria-labelledby="t-chart-desc"><desc id="t-chart-desc">Load-now threshold as the conversation grows</desc></svg></div>
-          <p class="formula">load now if size &lt; p × (0.1 × conversation + 300) / ((1 − p) × (1.25 + 0.1 × turns left))</p>
-          <p class="small">claude-mem measured the same effect with fixed size limits: blocking whole-file reads cost 20% more tokens on a 19 KB file with Opus, and saved about a third on a 49 KB file (<a href="https://docs.claude-mem.ai/file-read-gate.md">their evaluation</a>). The limit should move with the conversation, and here it does.</p>
-        </div>
+<section class="wrap section" id="tools">
+  <div class="section-head reveal">
+    <p class="eyebrow">What it does</p>
+    <h2>One profiler, two hooks.</h2>
+    <p>The profiler tells you where the tokens go. The hooks act on the biggest waste it finds, without changing how you work.</p>
+  </div>
+  <div class="grid-3">
+    <article class="card tool reveal">
+      <span class="tag">command</span>
+      <h3>profile: see where the tokens go</h3>
+      <p>The cost of every session, weighted by price. Which blocks of context carry it. What compacting at other moments would have saved. Memory lines never used, and files read again.</p>
+      <div class="code"><pre><code>arricurdai profile --project .</code></pre></div>
+    </article>
+    <article class="card tool reveal">
+      <span class="tag">hook · UserPromptSubmit</span>
+      <h3>guard: stop the costly resume</h3>
+      <p>When the cache of a session over 100,000 tokens has expired, it stops your first prompt once and shows what going on would cost. Send it again to go on.</p>
+      <div class="code"><pre><code>arricurdai guard --min-tokens 100000</code></pre></div>
+    </article>
+    <article class="card tool reveal">
+      <span class="tag">hook · SessionStart</span>
+      <h3>handoff: start fresh, keep the thread</h3>
+      <p>After that <code>/clear</code>, it gives the new session a note built from the transcript, without a model: the last requests, the files changed, the open tasks and the last reply.</p>
+      <div class="code"><pre><code>arricurdai handoff</code></pre></div>
+    </article>
+  </div>
+</section>
+
+<section class="wrap section" id="evidence">
+  <div class="section-head reveal">
+    <p class="eyebrow">Evidence</p>
+    <h2>Measured, then published.</h2>
+    <p>Five steps of real work on <a href="https://github.com/go-chi/chi">go-chi/chi</a> with Claude Code and Sonnet 5.5, under four ways of handling the context. Every variant passed hidden acceptance tests and the whole test suite.</p>
+  </div>
+  <div class="evidence">
+    <div class="card reveal">
+      <h3>Cost with a pause before each step</h3>
+      <p class="small">The cost Claude Code reported, plus writing the prefix of each step to the cache again after more than an hour.</p>
+      <div class="chart">
+        <div class="bar-row"><span>One long session</span><div class="bar"><i class="coral" style="width:100%"></i></div><b>$1.07</b></div>
+        <div class="bar-row"><span>Auto-compact at 100k</span><div class="bar"><i class="coral" style="width:95%"></i></div><b>$1.02</b></div>
+        <div class="bar-row"><span>/compact between steps</span><div class="bar"><i class="sky" style="width:80%"></i></div><b>$0.86</b></div>
+        <div class="bar-row"><span>New session + note <span class="badge">−40%</span></span><div class="bar"><i class="mint" style="width:60%"></i></div><b>$0.64</b></div>
       </div>
+      <p class="small">Without pauses, compacting cost more than it saved: a summary is paid at the output price, five times the input price. <a data-repo="/tree/main/experiments/context" href="#">The whole experiment</a></p>
     </div>
-  </section>
+    <ul class="findings reveal">
+      <li><b>Context size and pauses are what cost</b><span>Reading a large context on every call, and writing it again after a pause, outweigh everything else in long sessions.</span></li>
+      <li><b>Rediscovery is cheap</b><span>On three public repositories, re-reading what the agent already knew was 4–6% of the tokens. Better memory alone could save at most 1.2%.</span></li>
+      <li><b>Prices from the source</b><span>On Claude 5 models a cache read costs 0.05 of an input token, not 0.1, as the costs Claude Code records show.</span></li>
+    </ul>
+  </div>
+</section>
 
-  <section class="block" id="how" aria-labelledby="how-title">
-    <div class="wrap">
-      <h2 id="how-title">How it works</h2>
-      <p class="lead">arricurdAI does not replace the memory you already have. It sits between your memory stores and the agent's context, and decides what goes in.</p>
-      <ol class="steps">
-        <li>
-          <h3>Gather candidates</h3>
-          <p>Hybrid search over the memory you already keep: CLAUDE.md, Claude Code auto memory, claude-mem observations, notes anchored to code.</p>
-        </li>
-        <li>
-          <h3>Price each one</h3>
-          <p>Rent for the turns left, freshness from code anchors, so a changed function lowers the value, and a probability of use learned from past sessions.</p>
-        </li>
-        <li>
-          <h3>Choose the form</h3>
-          <p>Nothing, a one-line pointer, a short summary or the full note, within a budget per turn. Nothing is often the right answer.</p>
-        </li>
-        <li>
-          <h3>Measure the return</h3>
-          <p>Each memory shown is checked against the tool calls that follow. Memories that cost more than they save are proposed for pruning.</p>
-        </li>
-      </ol>
+<section class="wrap section" id="baseline">
+  <div class="section-head reveal">
+    <p class="eyebrow">Baseline</p>
+    <h2>What three public repositories spend.</h2>
+    <p>Five scripted Claude Code sessions on each repository, coming back to the same area of the code, then profiled. Costs are in price-weighted tokens, with the cache-read price before Claude 5 models (0.1).</p>
+  </div>
+  <div class="table-wrap reveal">
+    <table>
+      <thead><tr><th>Repository</th><th>Area</th><th class="num">Mean cost K</th><th class="num">Rediscovery</th><th class="num">S_max</th><th class="num">Memory share</th><th class="num">Unused memory lines</th></tr></thead>
+      <tbody>
+        <tr><td><a href="https://github.com/vitejs/vite">vitejs/vite</a></td><td>Hot module replacement</td><td class="num">58,012</td><td class="num">5.8%</td><td class="num">1.2%</td><td class="num">3.4%</td><td class="num">20 / 34</td></tr>
+        <tr><td><a href="https://github.com/fastapi/fastapi">fastapi/fastapi</a></td><td>Dependency injection</td><td class="num">53,422</td><td class="num">5.7%</td><td class="num">0.95%</td><td class="num">3.5%</td><td class="num">14 / 23</td></tr>
+        <tr><td><a href="https://github.com/gin-gonic/gin">gin-gonic/gin</a></td><td>Routing</td><td class="num">43,754</td><td class="num">4.1%</td><td class="num">0.51%</td><td class="num">4.5%</td><td class="num">15 / 23</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="wrap section" id="start">
+  <div class="section-head reveal">
+    <p class="eyebrow">Start</p>
+    <h2>Measure first, then let the hooks work.</h2>
+    <p>It needs Node 20 or later and pnpm. It is not on npm yet, so build it from a clone.</p>
+  </div>
+  <div class="start">
+    <div class="card reveal">
+      <h3>1. Build and profile</h3>
+      <div class="code"><pre class="copyable"><code>git clone https://github.com/alessiodonato/arricurdai
+cd arricurdai
+pnpm install && pnpm build
+node packages/cli/dist/bin.js profile --project /path/to/project</code></pre></div>
+      <p class="small">New here? The <a data-repo="/blob/main/docs/guide.md" href="#">guide</a> explains every part of the report.</p>
     </div>
-  </section>
-
-  <section class="block" id="benchmark" aria-labelledby="bench-title">
-    <div class="wrap">
-      <h2 id="bench-title">We publish a number only after measuring it</h2>
-      <p class="lead">The benchmark runs Claude Code on real repositories, with and without arricurdAI, and anyone can run it again from the arricurdai-bench repository.</p>
-      <ul class="method">
-        <li>Five open-source repositories in different languages, each with a working test suite.</li>
-        <li>Five linked sessions per repository: the first explores an area, the next ones come back to it with different changes.</li>
-        <li>Three setups on the same tasks: no memory, Claude Code native memory, and arricurdAI.</li>
-        <li>Same model and instructions, three runs per session, every transcript kept.</li>
-        <li>Price-weighted tokens per task, success rate and turns, with 95% confidence intervals.</li>
-        <li>The headline compares against Claude Code native memory, not against no memory, and tasks where arricurdAI costs more are published too.</li>
-      </ul>
-      <div class="panel" id="results" aria-live="polite">
-        <div class="results-empty" id="results-empty">
-          <h3>No results yet</h3>
-          <p>The benchmark has not run yet. When it does, it writes results.json next to this page and this section fills in on its own.</p>
-          <button type="button" class="link-button" id="preview-sample" hidden>Preview this section with sample data</button>
-        </div>
-        <div id="results-body" hidden></div>
-      </div>
+    <div class="card reveal">
+      <h3>2. Add the hooks</h3>
+      <p class="small">In <code>~/.claude/settings.json</code>, or <code>.claude/settings.json</code> for one project:</p>
+      <div class="code"><pre class="copyable"><code>{
+  "hooks": {
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command",
+      "command": "node /path/to/arricurdai/packages/cli/dist/bin.js guard" }] }],
+    "SessionStart": [{ "matcher": "clear", "hooks": [{ "type": "command",
+      "command": "node /path/to/arricurdai/packages/cli/dist/bin.js handoff" }] }]
+  }
+}</code></pre></div>
+      <p class="small">On any problem the hooks let the prompt through.</p>
     </div>
-  </section>
+  </div>
+</section>
 
-  <section class="block" id="compare" aria-labelledby="compare-title">
-    <div class="wrap">
-      <h2 id="compare-title">Works with what you already use</h2>
-      <p class="lead">Each of these tools does one part well. arricurdAI reads from them and adds the part none of them covers: what a memory costs over a session, and whether it paid off.</p>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr><th scope="col">Tool</th><th scope="col">Best at</th><th scope="col">What arricurdAI adds</th></tr>
-          </thead>
-          <tbody>
-            <tr><td>Claude Code native memory</td><td>Instructions loaded every session, and an index Claude writes itself</td><td>Ranking against each request, and a check on which lines are ever used</td></tr>
-            <tr><td><a href="https://docs.claude-mem.ai/file-read-gate.md">claude-mem</a></td><td>Capturing what the agent did, with layered recall</td><td>A load-or-wait limit that moves with the conversation, and a return per memory</td></tr>
-            <tr><td><a href="https://pypi.org/project/legendary-mcp/">legendary-mcp</a>, <a href="https://pypi.org/project/omni-memory-agent/0.9.0/">omni-memory</a></td><td>Notes anchored to code that go stale when the code changes</td><td>Freshness used as a price, next to rent and probability of use</td></tr>
-            <tr><td><a href="https://mem0.ai/research-3">mem0</a>, <a href="https://github.com/harryplusplus/graphiti">Zep and Graphiti</a></td><td>Long-term memory for conversations and business data</td><td>Costs that account for turns and the prompt cache in coding sessions</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </section>
+<section class="wrap section" id="roadmap">
+  <div class="section-head reveal">
+    <p class="eyebrow">Roadmap</p>
+    <h2>From measuring to remembering.</h2>
+  </div>
+  <div class="roadmap">
+    <article class="card phase done reveal"><span class="status">✓ Done</span><h3>Profile</h3><p>The price-weighted cost of every session, where it goes, and what other compaction policies would have saved.</p></article>
+    <article class="card phase done reveal"><span class="status">✓ Done</span><h3>Guard and handoff</h3><p>No cache rewrite after a pause: a new session with a note, chosen by you.</p></article>
+    <article class="card phase next reveal"><span class="status">→ Next</span><h3>Recall</h3><p>A local, lexical search over past sessions, so the agent can keep a small context and still find what was decided.</p></article>
+  </div>
+</section>
 
-  <section class="block" id="baseline" aria-labelledby="baseline-title">
-    <div class="wrap">
-      <h2 id="baseline-title">What three public repositories spend today</h2>
-      <p class="lead">Before arricurdAI changes anything, its profiler measures what Claude Code spends now. We ran five scripted sessions on one area of each repository, coming back to it the way a developer does over several days, and profiled them.</p>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr><th scope="col">Repository</th><th scope="col">Area</th><th scope="col" class="num">Mean cost K</th><th scope="col" class="num">Read from cache</th><th scope="col" class="num">Rediscovery</th><th scope="col" class="num">S<sub>max</sub></th><th scope="col" class="num">Memory share</th><th scope="col" class="num">Memory lines never used</th></tr>
-          </thead>
-          <tbody>
-            <tr><td><a href="https://github.com/vitejs/vite">vitejs/vite</a><br><span class="small">TypeScript</span></td><td>Hot module replacement</td><td class="num">58,012</td><td class="num">85%</td><td class="num">5.8%</td><td class="num">1.2%</td><td class="num">3.4%</td><td class="num">20 of 34</td></tr>
-            <tr><td><a href="https://github.com/fastapi/fastapi">fastapi/fastapi</a><br><span class="small">Python</span></td><td>Dependency injection</td><td class="num">53,422</td><td class="num">86%</td><td class="num">5.7%</td><td class="num">0.95%</td><td class="num">3.5%</td><td class="num">14 of 23</td></tr>
-            <tr><td><a href="https://github.com/gin-gonic/gin">gin-gonic/gin</a><br><span class="small">Go</span></td><td>Routing</td><td class="num">43,754</td><td class="num">86%</td><td class="num">4.1%</td><td class="num">0.51%</td><td class="num">4.5%</td><td class="num">15 of 23</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <ul class="method">
-        <li><strong>Rediscovery is small in short sessions on one area.</strong> Between 4% and 6% of the tokens read as context were already known from an earlier session. S<sub>max</sub>, the ceiling on what avoiding them could save, stays at or under 1.2% of the cost.</li>
-        <li><strong>The memory costs more.</strong> CLAUDE.md takes between 3.4% and 4.5% of the cost of every session, and more than half of its lines with something to check were never used: build, lint and test commands these sessions never ran, and parts of the code they never touched.</li>
-        <li><strong>So the larger lever is choosing which memory enters the context</strong>, which is what arricurdAI does next.</li>
-      </ul>
-      <p class="note">These numbers measure today's spend, not savings: arricurdAI changed nothing in these sessions. The sessions are five per repository, scripted, run with Claude Code 2.1.310 on Sonnet with the CLAUDE.md that /init wrote, on 26 October 2026. Mean cost K is in price-weighted tokens per session. Five sessions are an example, not a statistic. The prompts and the script are in the <a data-repo="/tree/main/showcase" href="#">showcase folder</a>, so anyone can run them again.</p>
-    </div>
-  </section>
-
-  <section class="block" id="start" aria-labelledby="start-title">
-    <div class="wrap">
-      <h2 id="start-title">Start by measuring</h2>
-      <p class="lead">The profiler reads your local Claude Code transcripts and shows where your tokens go. Nothing leaves your machine.</p>
-      <div class="start-grid">
-        <div>
-          <h3>See what you pay today</h3>
-          <pre><code>npx arricurdai profile --project .</code></pre>
-          <p class="small">The npm package arrives with v0.1. Until then, build it from the <a data-repo="" href="#">repository</a>; the <a data-repo="/blob/main/docs/guide.md" href="#">guide</a> takes two minutes.</p>
-        </div>
-        <div>
-          <h3>Then let it choose</h3>
-          <pre><code>/plugin marketplace add alessiodonato/arricurdai
-/plugin install arricurdai</code></pre>
-          <p class="small">The Claude Code plugin is planned for v0.2.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-</main>
-
-<footer class="site-footer">
+<footer>
   <div class="wrap">
-    <p>arricurdAI is open source under the Apache-2.0 licence.</p>
-    <p>Source, design document and benchmark on <a data-repo="" href="#">GitHub</a>.</p>
+    <p>arricurdAI · Apache-2.0 · local only: no network calls, no telemetry, no model.</p>
+    <div class="foot-links">
+      <a data-repo="" href="#">GitHub</a>
+      <a data-repo="/blob/main/docs/guide.md" href="#">Guide</a>
+      <a data-repo="/blob/main/docs/transcript-schema.md" href="#">Transcript schema</a>
+      <a data-repo="/tree/main/experiments/context" href="#">Experiment</a>
+      <a data-repo="/blob/main/LICENSE" href="#">License</a>
+    </div>
   </div>
 </footer>
 
 <script>
-(() => {
-  // Edit this once the repository exists.
   const REPO_URL = 'https://github.com/alessiodonato/arricurdai';
-
-  // Anthropic prompt-cache multipliers and round-trip overhead used in every calculation.
-  const W = 1.25, R = 0.1, O = 300;
-
-  const $ = (id) => document.getElementById(id);
-  const fmt = (n) => Math.round(n).toLocaleString('en-US');
-  const pct = (x) => Math.round(x * 100) + '%';
-
   document.querySelectorAll('[data-repo]').forEach((a) => { a.href = REPO_URL + (a.dataset.repo || ''); });
 
-  // Rent meter
-  const mSize = $('m-size'), mTurns = $('m-turns'), mAt = $('m-at');
-  function updateMeter() {
-    const c = +mSize.value;
-    const T = +mTurns.value;
-    mAt.max = String(T);
-    if (+mAt.value > T) mAt.value = String(T);
-    const t = +mAt.value;
-    const paid = c * (W + R * (T - t));
-    $('m-size-out').textContent = fmt(c) + ' tokens';
-    $('m-turns-out').textContent = T + ' turns';
-    $('m-at-out').textContent = 'turn ' + t;
-    $('m-paid').textContent = fmt(paid) + ' tokens paid';
-    $('m-paid-sub').textContent = 'for ' + fmt(c) + ' tokens of memory: ' + (paid / c).toFixed(1) + '× its size, because it is read again on each of the ' + (T - t) + ' turns after it is loaded.';
-    const tiles = $('m-tiles');
-    tiles.textContent = '';
-    for (let i = 1; i <= T; i++) {
-      const d = document.createElement('div');
-      d.className = 'tile' + (i === t ? ' write' : i > t ? ' read' : '');
-      tiles.appendChild(d);
-    }
+  // Calculator: the context cost of the calls after a pause, going on or starting fresh.
+  const $ = (id) => document.getElementById(id);
+  const tokens = (n) => n.toLocaleString('en-US') + ' tokens';
+  const usd = (n) => '$' + n.toFixed(2);
+  function calculate() {
+    const price = Number($('model').value) / 1e6;
+    const context = Number($('ctx').value);
+    const calls = Number($('calls').value);
+    const start = Number($('start-size').value);
+    const goOn = (context * 2 + calls * context * 0.05) * price;
+    const fresh = (start * 2 + calls * start * 0.05) * price;
+    $('ctxOut').textContent = tokens(context);
+    $('callsOut').textContent = String(calls);
+    $('startOut').textContent = tokens(start);
+    $('costA').textContent = usd(goOn);
+    $('costB').textContent = usd(fresh);
+    const top = Math.max(goOn, fresh);
+    $('barA').style.width = (goOn / top) * 100 + '%';
+    $('barB').style.width = Math.max(2, (fresh / top) * 100) + '%';
+    $('saving').innerHTML = fresh < goOn
+      ? 'You save <strong>' + usd(goOn - fresh) + ' (' + Math.round((1 - fresh / goOn) * 100) + '%)</strong>'
+      : 'Nothing to save: the session is small.';
+    $('explain').textContent = 'Going on writes ' + tokens(context) + ' to the cache again (' + usd(context * 2 * price)
+      + '), then every call reads them (' + usd(context * 0.05 * price) + ' each). A new session writes ' + tokens(start)
+      + ' and reads only those.';
   }
-  [mSize, mTurns, mAt].forEach((el) => el.addEventListener('input', updateMeter));
-  updateMeter();
+  ['model', 'ctx', 'calls', 'start-size'].forEach((id) => $(id).addEventListener('input', calculate));
+  calculate();
 
-  // Worked example: 30-turn session, context loaded at turn 3.
-  const turnsLeft = 27;
-  const mult = W + R * turnsLeft;
-  const tripCost = R * 15000 + O;
-  const without = [
-    { what: 'Read src/middleware/auth.ts', loaded: 12000 },
-    { what: 'Grep "session" in src/', loaded: 2500 },
-    { what: 'Read src/routes/index.ts', loaded: 8500 }
-  ];
-  const withMem = [
-    { what: 'Two memory pointers from the hook', loaded: 50 },
-    { what: 'read_memory("auth-session-flow")', loaded: 300 },
-    { what: 'Extra round trip to fetch the note', loaded: 0, fixed: tripCost },
-    { what: 'Read auth.ts, lines 40 to 95', loaded: 1200 }
-  ];
-  const paidOf = (row) => (row.fixed !== undefined ? row.fixed : row.loaded * mult);
-  const maxPaid = Math.max(...without.map(paidOf), ...withMem.map(paidOf));
-  function renderLedger(listId, rows) {
-    const ul = $(listId);
-    let total = 0;
-    rows.forEach((row) => {
-      const paid = paidOf(row);
-      total += paid;
-      const li = document.createElement('li');
-      const loadedText = row.fixed !== undefined ? 'paid once, not kept in context' : fmt(row.loaded) + ' tokens loaded';
-      li.innerHTML = '<div class="line"><span class="what"></span><span class="paid"></span></div><div class="loaded"></div><div class="bar"></div>';
-      li.querySelector('.what').textContent = row.what;
-      li.querySelector('.paid').textContent = fmt(paid);
-      li.querySelector('.loaded').textContent = loadedText;
-      li.querySelector('.bar').style.width = Math.max(0.5, (paid / maxPaid) * 100) + '%';
-      ul.appendChild(li);
-    });
-    return total;
-  }
-  const totalWithout = renderLedger('ex-without', without);
-  const totalWith = renderLedger('ex-with', withMem);
-  $('ex-without-total').textContent = fmt(totalWithout);
-  $('ex-with-total').textContent = fmt(totalWith);
-  $('ex-saving').textContent = pct(1 - totalWith / totalWithout) + ' less';
-
-  // Load-now threshold
-  const tSize = $('t-size'), tP = $('t-p'), tCtx = $('t-ctx'), tLeft = $('t-left');
-  const threshold = (p, L, n) => (p * (R * L + O)) / ((1 - p) * (W + R * n));
-  const SVGNS = 'http://www.w3.org/2000/svg';
-  function svgEl(name, attrs, text) {
-    const el = document.createElementNS(SVGNS, name);
-    Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, String(v)));
-    if (text !== undefined) el.textContent = text;
-    return el;
-  }
-  function updateThreshold() {
-    const c = +tSize.value, p = +tP.value / 100, L = +tCtx.value, n = +tLeft.value;
-    $('t-size-out').textContent = fmt(c) + ' tokens';
-    $('t-p-out').textContent = Math.round(p * 100) + '%';
-    $('t-ctx-out').textContent = fmt(L) + ' tokens';
-    $('t-left-out').textContent = String(n);
-    const thr = threshold(p, L, n);
-    const now = c < thr;
-    $('t-verdict').textContent = now ? 'Load it now' : 'Wait until it is needed';
-    $('t-detail').textContent = 'Load-now limit: ' + fmt(thr) + ' tokens. This memory is ' + fmt(c) + (now ? ', below the limit.' : ', above the limit.');
-
-    const svg = $('t-chart');
-    [...svg.querySelectorAll(':scope > :not(desc)')].forEach((el) => el.remove());
-    const left = 72, right = 624, top = 16, bottom = 250;
-    const xMax = 200000;
-    const yMax = Math.max(threshold(p, xMax, n), c) * 1.1;
-    const x = (v) => left + (v / xMax) * (right - left);
-    const y = (v) => bottom - (v / yMax) * (bottom - top);
-    svg.appendChild(svgEl('line', { class: 'axis', x1: left, y1: bottom, x2: right, y2: bottom }));
-    svg.appendChild(svgEl('line', { class: 'axis', x1: left, y1: top, x2: left, y2: bottom }));
-    [0, 50000, 100000, 150000, 200000].forEach((v) => {
-      svg.appendChild(svgEl('text', { x: x(v), y: bottom + 18, 'text-anchor': 'middle' }, v === 0 ? '0' : (v / 1000) + 'k'));
-    });
-    for (let i = 0; i <= 4; i++) {
-      const v = (yMax / 4) * i;
-      svg.appendChild(svgEl('text', { x: left - 8, y: y(v) + 4, 'text-anchor': 'end' }, fmt(v)));
-    }
-    svg.appendChild(svgEl('text', { x: (left + right) / 2, y: 292, 'text-anchor': 'middle' }, 'Conversation so far (tokens)'));
-    let d = '';
-    for (let i = 0; i <= 40; i++) {
-      const v = (xMax / 40) * i;
-      d += (i === 0 ? 'M' : 'L') + x(v).toFixed(1) + ' ' + y(threshold(p, v, n)).toFixed(1);
-    }
-    svg.appendChild(svgEl('path', { class: 'curve', d }));
-    svg.appendChild(svgEl('line', { class: 'mem', x1: left, y1: y(c), x2: right, y2: y(c) }));
-    svg.appendChild(svgEl('text', { x: right, y: y(c) - 8, 'text-anchor': 'end' }, 'this memory: ' + fmt(c)));
-    svg.appendChild(svgEl('text', { x: x(xMax * 0.6), y: y(threshold(p, xMax * 0.6, n)) - 12, 'text-anchor': 'end' }, 'load-now limit'));
-    svg.appendChild(svgEl('circle', { class: 'dot', cx: x(L), cy: y(thr), r: 6 }));
-    $('t-chart-desc').textContent = 'Load-now limit as the conversation grows. At ' + fmt(L) + ' tokens of conversation the limit is ' + fmt(thr) + ' tokens; this memory is ' + fmt(c) + ' tokens.';
-  }
-  [tSize, tP, tCtx, tLeft].forEach((el) => el.addEventListener('input', updateThreshold));
-  updateThreshold();
-
-  // Benchmark results
-  const SAMPLE = {
-    version: 'sample', date: 'n/a', model: 'n/a', repos: 5, sessions: 75,
-    headline: { vs: 'native', savings: 0.60, ci: [0.52, 0.67], success_delta_pt: -1.0 },
-    arms: [
-      { id: 'none', label: 'No memory', k_mean: 412000, k_ci: [380000, 445000], success: 0.78, turns_mean: 31 },
-      { id: 'native', label: 'Claude Code native memory', k_mean: 356000, k_ci: [329000, 384000], success: 0.80, turns_mean: 28 },
-      { id: 'arricurdai', label: 'arricurdAI', k_mean: 142000, k_ci: [128000, 158000], success: 0.79, turns_mean: 22 }
-    ],
-    per_repo: [
-      { repo: 'sample/repo-1', lang: 'TypeScript', k: { none: 398000, native: 341000, arricurdai: 131000 } },
-      { repo: 'sample/repo-2', lang: 'Python', k: { none: 455000, native: 392000, arricurdai: 170000 } },
-      { repo: 'sample/repo-3', lang: 'Go', k: { none: 371000, native: 330000, arricurdai: 128000 } },
-      { repo: 'sample/repo-4', lang: 'Rust', k: { none: 430000, native: 371000, arricurdai: 150000 } },
-      { repo: 'sample/repo-5', lang: 'Java', k: { none: 406000, native: 346000, arricurdai: 131000 } }
-    ]
-  };
-
-  function renderResults(data, isSample) {
-    const body = $('results-body');
-    body.textContent = '';
-    if (isSample) {
-      const b = document.createElement('p');
-      b.className = 'sample-banner';
-      b.textContent = 'Sample data for a layout preview. Nothing in this section was measured.';
-      body.appendChild(b);
-    }
-    const h = data.headline;
-    const head = document.createElement('p');
-    head.className = 'headline';
-    head.textContent = pct(h.savings) + ' fewer price-weighted tokens per task than Claude Code native memory';
-    body.appendChild(head);
-    const meta = document.createElement('p');
-    meta.className = 'small';
-    const delta = (h.success_delta_pt >= 0 ? '+' : '') + h.success_delta_pt.toFixed(1);
-    meta.textContent = '95% confidence interval ' + pct(h.ci[0]) + ' to ' + pct(h.ci[1]) + '. Success rate change: ' + delta + ' points. ' + data.repos + ' repositories, ' + data.sessions + ' sessions, model ' + data.model + ', run on ' + data.date + '.';
-    body.appendChild(meta);
-
-    // Bar chart of mean tokens per task with confidence intervals
-    const arms = data.arms;
-    const rowH = 56, left = 210, right = 540, top = 12;
-    const height = top + arms.length * rowH + 30;
-    const svg = svgEl('svg', { class: 'chart', viewBox: '0 0 640 ' + height, role: 'img', 'aria-label': 'Mean price-weighted tokens per task by setup, with 95% confidence intervals' });
-    const xMax = Math.max(...arms.map((a) => a.k_ci[1])) * 1.08;
-    const x = (v) => left + (v / xMax) * (right - left);
-    arms.forEach((a, i) => {
-      const yMid = top + i * rowH + rowH / 2;
-      const isOurs = a.id === 'arricurdai';
-      svg.appendChild(svgEl('text', { x: left - 12, y: yMid - 2, 'text-anchor': 'end' }, a.label));
-      svg.appendChild(svgEl('text', { x: left - 12, y: yMid + 14, 'text-anchor': 'end' }, 'success ' + pct(a.success)));
-      svg.appendChild(svgEl('rect', { x: left, y: yMid - 12, width: Math.max(1, x(a.k_mean) - left), height: 24, rx: 2, style: 'fill: var(' + (isOurs ? '--saffron' : '--cobalt') + ')' }));
-      svg.appendChild(svgEl('line', { x1: x(a.k_ci[0]), y1: yMid, x2: x(a.k_ci[1]), y2: yMid, style: 'stroke: var(--ink); stroke-width: 1.5' }));
-      [a.k_ci[0], a.k_ci[1]].forEach((v) => svg.appendChild(svgEl('line', { x1: x(v), y1: yMid - 7, x2: x(v), y2: yMid + 7, style: 'stroke: var(--ink); stroke-width: 1.5' })));
-      svg.appendChild(svgEl('text', { x: x(a.k_ci[1]) + 10, y: yMid + 4 }, fmt(a.k_mean)));
-    });
-    svg.appendChild(svgEl('text', { x: (left + right) / 2, y: height - 6, 'text-anchor': 'middle' }, 'Price-weighted tokens per task (mean, 95% CI)'));
-    const scroll = document.createElement('div');
-    scroll.className = 'chart-scroll';
-    scroll.appendChild(svg);
-    body.appendChild(scroll);
-
-    // Per-repository table
-    if (Array.isArray(data.per_repo) && data.per_repo.length) {
-      const wrap = document.createElement('div');
-      wrap.className = 'table-wrap';
-      const rows = data.per_repo.map((r) => {
-        const save = 1 - r.k.arricurdai / r.k.native;
-        return '<tr><td></td><td></td><td class="num">' + fmt(r.k.none) + '</td><td class="num">' + fmt(r.k.native) + '</td><td class="num">' + fmt(r.k.arricurdai) + '</td><td class="num">' + pct(save) + '</td></tr>';
-      }).join('');
-      wrap.innerHTML = '<table><thead><tr><th scope="col">Repository</th><th scope="col">Language</th><th scope="col" class="num">No memory</th><th scope="col" class="num">Native</th><th scope="col" class="num">arricurdAI</th><th scope="col" class="num">Saving vs native</th></tr></thead><tbody>' + rows + '</tbody></table>';
-      const trs = wrap.querySelectorAll('tbody tr');
-      data.per_repo.forEach((r, i) => {
-        trs[i].children[0].textContent = r.repo;
-        trs[i].children[1].textContent = r.lang;
-      });
-      body.appendChild(wrap);
-    }
-
-    $('results-empty').hidden = true;
-    body.hidden = false;
-    if (!isSample) {
-      $('hero-status').innerHTML = '';
-      const s = document.createElement('strong');
-      s.textContent = 'Measured: ' + pct(h.savings) + ' fewer tokens per task than Claude Code native memory';
-      $('hero-status').append(s, ' (95% CI ' + pct(h.ci[0]) + ' to ' + pct(h.ci[1]) + '). ');
-      const a = document.createElement('a');
-      a.href = '#benchmark';
-      a.textContent = 'See the method';
-      $('hero-status').append(a);
-    }
-  }
-
-  async function loadResults() {
-    try {
-      const res = await fetch('results.json', { cache: 'no-store' });
-      if (!res.ok) throw new Error('missing');
-      renderResults(await res.json(), false);
-    } catch (e) {
-      // No published results: the sample preview is offered only outside GitHub Pages.
-      if (!location.hostname.endsWith('github.io')) {
-        const btn = $('preview-sample');
-        btn.hidden = false;
-        btn.addEventListener('click', () => renderResults(SAMPLE, true), { once: true });
+  // Copy buttons on the setup snippets.
+  document.querySelectorAll('pre.copyable').forEach((pre) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'copy';
+    button.textContent = 'Copy';
+    button.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(pre.innerText);
+        button.textContent = 'Copied';
+      } catch {
+        button.textContent = 'Select and copy';
       }
-    }
+      setTimeout(() => { button.textContent = 'Copy'; }, 1600);
+    });
+    pre.parentElement.appendChild(button);
+  });
+
+  // Sections fade in as they come into view.
+  const items = document.querySelectorAll('.reveal');
+  if ('IntersectionObserver' in window) {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) { entry.target.classList.add('in'); observer.unobserve(entry.target); }
+      });
+    }, { threshold: 0.12 });
+    items.forEach((item) => observer.observe(item));
+  } else {
+    items.forEach((item) => item.classList.add('in'));
   }
-  loadResults();
-})();
 </script>
 </body>
 </html>
