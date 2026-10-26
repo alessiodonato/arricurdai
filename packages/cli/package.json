@@ -4,6 +4,15 @@
   "description": "Measures what a Claude Code project spends on context it already knew.",
   "license": "Apache-2.0",
   "type": "module",
+  "bin": {
+    "arricurdai": "./dist/bin.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "files": [
     "dist"
   ],
@@ -16,6 +25,8 @@
   },
   "dependencies": {
     "@arricurdai/core": "workspace:*",
-    "@arricurdai/transcripts": "workspace:*"
+    "@arricurdai/transcripts": "workspace:*",
+    "commander": "^14.0.3",
+    "picocolors": "^1.1.1"
   }
 }
