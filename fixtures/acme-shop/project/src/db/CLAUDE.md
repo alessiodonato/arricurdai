@@ -1,0 +1,1 @@
+- Queries must use the `withTransaction()` wrapper from `src/db/tx.ts`.

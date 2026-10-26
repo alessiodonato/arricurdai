@@ -1,0 +1,1 @@
+- Never edit generated files under `src/generated/`.

@@ -1,0 +1,646 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>arricurdAI: agent memory that pays for itself</title>
+<meta name="description" content="arricurdAI is an open-source memory layer for coding agents. It decides which memories enter the context, in what form and when, and measures whether each one saves more tokens than it costs.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!--
+  results.json (written by arricurdai-bench next to this file) must look like:
+  {
+    "version": "0.1.0", "date": "YYYY-MM-DD", "model": "<model id>",
+    "repos": 5, "sessions": 75,
+    "price_weights": { "w": 1.25, "r": 0.1, "mu": 5 },
+    "headline": { "vs": "native", "savings": 0.0, "ci": [0.0, 0.0], "success_delta_pt": 0.0 },
+    "arms": [ { "id": "none" | "native" | "arricurdai", "label": "...", "k_mean": 0, "k_ci": [0, 0], "success": 0.0, "turns_mean": 0 } ],
+    "per_repo": [ { "repo": "owner/name", "lang": "TypeScript", "k": { "none": 0, "native": 0, "arricurdai": 0 } } ]
+  }
+  Without results.json the page says the benchmark has not run yet. It never shows a savings figure that was not measured.
+-->
+<style>
+  :root {
+    --glaze: #F3F5F8;
+    --paper: #FFFFFF;
+    --ink: #16202C;
+    --ink-2: #4A5666;
+    --line: #D3D9E1;
+    --cobalt: #1D4E9E;
+    --on-cobalt: #FFFFFF;
+    --cobalt-soft: #DCE6F5;
+    --saffron: #D9940F;
+    --saffron-soft: #F8EBCB;
+    --code-bg: #1B2A3F;
+    --code-ink: #E6ECF4;
+    --display: 'Bricolage Grotesque', system-ui, sans-serif;
+    --body: 'Atkinson Hyperlegible', system-ui, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --glaze: #0F1722;
+      --paper: #16212F;
+      --ink: #E8EDF3;
+      --ink-2: #A3AFBE;
+      --line: #2A3748;
+      --cobalt: #7FA6E8;
+      --on-cobalt: #0F1722;
+      --cobalt-soft: #1E3354;
+      --saffron: #F0B43A;
+      --saffron-soft: #3A2F16;
+      --code-bg: #0B121B;
+      --code-ink: #E6ECF4;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  body { margin: 0; background: var(--glaze); color: var(--ink); font: 400 1.0625rem/1.6 var(--body); }
+  a { color: var(--cobalt); text-underline-offset: 3px; }
+  :focus-visible { outline: 3px solid var(--saffron); outline-offset: 2px; border-radius: 2px; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+  /* Header */
+  .site-header { border-bottom: 1px solid var(--line); }
+  .site-header .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px 32px; min-height: 64px; flex-wrap: wrap; padding-top: 8px; padding-bottom: 8px; }
+  .wordmark { font: 700 1.375rem/1 var(--display); color: var(--ink); text-decoration: none; letter-spacing: -0.01em; }
+  .site-nav ul { display: flex; flex-wrap: wrap; gap: 4px 22px; list-style: none; margin: 0; padding: 0; }
+  .site-nav a { color: var(--ink-2); text-decoration: none; font-size: 0.9375rem; }
+  .site-nav a:hover { color: var(--ink); text-decoration: underline; }
+
+  /* Type */
+  h1 { font: 700 clamp(2.25rem, 5vw, 3.6rem)/1.05 var(--display); letter-spacing: -0.02em; margin: 0 0 20px; max-width: 15ch; }
+  h2 { font: 700 clamp(1.625rem, 3vw, 2.25rem)/1.15 var(--display); letter-spacing: -0.015em; margin: 0 0 12px; max-width: 26ch; }
+  h3 { font: 600 1.1875rem/1.3 var(--display); margin: 0 0 6px; }
+  p { margin: 0 0 16px; max-width: 68ch; }
+  .lead { font-size: 1.1875rem; color: var(--ink-2); max-width: 62ch; margin-bottom: 32px; }
+  .small { font-size: 0.9375rem; color: var(--ink-2); }
+  code, .mono { font-family: var(--mono); font-size: 0.9em; }
+
+  /* Grid children may shrink below their content, so wide charts and tables scroll inside their box */
+  .hero > *, .compare > *, .threshold > *, .start-grid > *, .steps > * { min-width: 0; }
+
+  /* Sections */
+  .block { padding: 80px 0; border-top: 1px solid var(--line); }
+
+  /* Hero */
+  .hero { display: grid; grid-template-columns: 1.05fr 1fr; gap: 56px; align-items: start; padding: 72px 0 80px; }
+  @media (max-width: 900px) { .hero { grid-template-columns: 1fr; gap: 40px; padding-top: 48px; } }
+  .hero .intro { font-size: 1.1875rem; color: var(--ink-2); max-width: 52ch; }
+  .name-note { font-size: 0.9375rem; color: var(--ink-2); }
+  .buttons { display: flex; flex-wrap: wrap; gap: 12px; margin: 28px 0 18px; }
+  .btn { display: inline-block; padding: 12px 20px; border-radius: 6px; font-weight: 700; text-decoration: none; border: 2px solid var(--cobalt); line-height: 1.2; }
+  .btn-primary { background: var(--cobalt); color: var(--on-cobalt); }
+  .btn-secondary { background: transparent; color: var(--cobalt); }
+  .btn-primary:hover, .btn-secondary:hover { filter: brightness(1.08); }
+  .hero-status { font-size: 0.9375rem; color: var(--ink-2); max-width: 52ch; }
+  .hero-status strong { color: var(--ink); }
+
+  /* Panels and controls */
+  .panel { background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 24px; }
+  .panel-title { font: 600 1.25rem/1.3 var(--display); margin: 0 0 18px; }
+  .control { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; margin-bottom: 14px; }
+  .control label { font-size: 0.9375rem; }
+  .control output { font-family: var(--mono); font-size: 0.9375rem; }
+  .control input { grid-column: 1 / -1; width: 100%; accent-color: var(--cobalt); margin: 4px 0 0; }
+  .figure { font: 700 2.5rem/1 var(--display); letter-spacing: -0.02em; margin: 20px 0 6px; }
+  .figure-sub { color: var(--ink-2); margin: 0; }
+  .formula { font-family: var(--mono); font-size: 0.875rem; background: var(--glaze); border-radius: 6px; padding: 10px 12px; margin: 16px 0 0; }
+
+  /* Rent tiles */
+  .tiles { display: grid; grid-template-columns: repeat(20, 1fr); gap: 3px; margin: 20px 0 12px; }
+  .tile { aspect-ratio: 1; border-radius: 2px; border: 1px solid var(--line); background: transparent; }
+  .tile.write { background: var(--saffron); border-color: var(--saffron); }
+  .tile.read { background: var(--cobalt); border-color: var(--cobalt); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.875rem; color: var(--ink-2); margin: 0; padding: 0; list-style: none; }
+  .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -1px; margin-right: 6px; border: 1px solid var(--line); }
+  .swatch.write { background: var(--saffron); border-color: var(--saffron); }
+  .swatch.read { background: var(--cobalt); border-color: var(--cobalt); }
+
+  /* Worked example */
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+  @media (max-width: 900px) { .compare { grid-template-columns: 1fr; } }
+  .ledger { list-style: none; margin: 16px 0 0; padding: 0; }
+  .ledger li { padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .ledger .line { display: flex; justify-content: space-between; gap: 16px; }
+  .ledger .what { font-size: 0.9375rem; }
+  .ledger .paid { font-family: var(--mono); font-size: 0.875rem; white-space: nowrap; }
+  .ledger .loaded { font-size: 0.8125rem; color: var(--ink-2); }
+  .bar { height: 8px; border-radius: 2px; margin-top: 6px; background: var(--cobalt); min-width: 2px; }
+  .with .bar { background: var(--saffron); }
+  .total { display: flex; justify-content: space-between; gap: 16px; font-weight: 700; padding-top: 12px; border-top: 2px solid var(--ink); margin-top: -1px; }
+  .outcome { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; margin-top: 40px; }
+  .outcome .figure { margin: 0; }
+  .note { font-size: 0.9375rem; color: var(--ink-2); border-left: 3px solid var(--line); padding-left: 14px; max-width: 70ch; margin-top: 24px; }
+
+  /* Threshold */
+  .threshold { display: grid; grid-template-columns: 320px 1fr; gap: 40px; align-items: start; }
+  @media (max-width: 900px) { .threshold { grid-template-columns: 1fr; } }
+  .verdict { font: 700 1.5rem/1.2 var(--display); margin: 18px 0 4px; }
+  .chart-scroll { overflow-x: auto; }
+  .chart { width: 100%; min-width: 560px; height: auto; display: block; }
+  .chart text { fill: var(--ink-2); font: 13px var(--body); }
+  .chart .axis { stroke: var(--line); }
+  .chart .curve { stroke: var(--cobalt); stroke-width: 2.5; fill: none; }
+  .chart .mem { stroke: var(--saffron); stroke-width: 2; stroke-dasharray: 6 5; }
+  .chart .dot { fill: var(--cobalt); stroke: var(--paper); stroke-width: 2; }
+
+  /* Steps */
+  .steps { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 32px; counter-reset: step; }
+  @media (max-width: 900px) { .steps { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 560px) { .steps { grid-template-columns: 1fr; } }
+  .steps li { counter-increment: step; border-top: 3px solid var(--cobalt); padding-top: 14px; }
+  .steps li::before { content: counter(step); display: block; font: 700 1.75rem/1 var(--display); color: var(--cobalt); margin-bottom: 10px; }
+  .steps p { font-size: 0.9375rem; color: var(--ink-2); margin: 0; }
+
+  /* Benchmark */
+  .method { margin: 0 0 32px; padding-left: 20px; max-width: 70ch; }
+  .method li { margin-bottom: 8px; }
+  .results-empty p { margin-bottom: 12px; }
+  .sample-banner { background: var(--saffron-soft); border: 1px solid var(--saffron); border-radius: 6px; padding: 10px 14px; font-weight: 700; margin-bottom: 20px; }
+  .headline { font: 700 clamp(1.75rem, 4vw, 2.75rem)/1.1 var(--display); letter-spacing: -0.02em; margin: 0 0 8px; }
+  .link-button { font: inherit; font-weight: 700; color: var(--cobalt); background: none; border: 2px solid var(--cobalt); border-radius: 6px; padding: 10px 16px; cursor: pointer; }
+
+  /* Tables */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; min-width: 600px; border-collapse: collapse; font-size: 0.9375rem; }
+  th, td { text-align: left; padding: 12px 14px 12px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 700; }
+  td.num, th.num { text-align: right; font-family: var(--mono); font-size: 0.875rem; padding-right: 0; padding-left: 14px; white-space: nowrap; }
+
+  /* Code */
+  pre { background: var(--code-bg); color: var(--code-ink); border-radius: 8px; padding: 16px 18px; overflow-x: auto; font: 400 0.9375rem/1.5 var(--mono); margin: 12px 0 8px; max-width: 720px; }
+  .start-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; }
+  @media (max-width: 900px) { .start-grid { grid-template-columns: 1fr; } }
+
+  /* Footer */
+  .site-footer { border-top: 1px solid var(--line); padding: 32px 0 48px; font-size: 0.9375rem; color: var(--ink-2); }
+  .site-footer p { margin: 0 0 6px; }
+</style>
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap">
+    <a class="wordmark" href="#top">arricurdAI</a>
+    <nav class="site-nav" aria-label="Main">
+      <ul>
+        <li><a href="#example">Example</a></li>
+        <li><a href="#threshold">Load now or later</a></li>
+        <li><a href="#how">How it works</a></li>
+        <li><a href="#benchmark">Benchmark</a></li>
+        <li><a href="#start">Get started</a></li>
+        <li><a data-repo="" href="#">GitHub</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <div class="wrap">
+    <section class="hero" aria-labelledby="hero-title">
+      <div>
+        <h1 id="hero-title">Your agent pays for its memory on every turn.</h1>
+        <p class="intro">arricurdAI is an open-source memory layer for coding agents. It decides which memories enter the context, in what form and when, and it measures whether each one saves more tokens than it costs.</p>
+        <p class="name-note">The name comes from arricurdari, Sicilian for “to remember”.</p>
+        <div class="buttons">
+          <a class="btn btn-primary" href="#start">Measure your project</a>
+          <a class="btn btn-secondary" href="#benchmark">Read the method</a>
+        </div>
+        <p class="hero-status" id="hero-status">Benchmark not published yet. This page shows no savings figure until it has been measured.</p>
+      </div>
+
+      <div class="panel" aria-labelledby="meter-title">
+        <h2 class="panel-title" id="meter-title">What a memory really costs</h2>
+        <div class="control">
+          <label for="m-size">Memory size</label>
+          <output id="m-size-out" for="m-size"></output>
+          <input type="range" id="m-size" min="200" max="20000" step="100" value="3000">
+        </div>
+        <div class="control">
+          <label for="m-turns">Session length</label>
+          <output id="m-turns-out" for="m-turns"></output>
+          <input type="range" id="m-turns" min="2" max="100" step="1" value="40">
+        </div>
+        <div class="control">
+          <label for="m-at">Loaded at turn</label>
+          <output id="m-at-out" for="m-at"></output>
+          <input type="range" id="m-at" min="1" max="40" step="1" value="1">
+        </div>
+        <p class="figure" id="m-paid" aria-live="polite"></p>
+        <p class="figure-sub" id="m-paid-sub"></p>
+        <div class="tiles" id="m-tiles" aria-hidden="true"></div>
+        <ul class="legend">
+          <li><span class="swatch write"></span>Written to the cache once, at 1.25×</li>
+          <li><span class="swatch read"></span>Read again on each later turn, at 0.1×</li>
+          <li><span class="swatch"></span>Not loaded yet</li>
+        </ul>
+        <p class="formula">paid = size × (1.25 + 0.1 × turns after loading)</p>
+      </div>
+    </section>
+  </div>
+
+  <section class="block" id="example" aria-labelledby="example-title">
+    <div class="wrap">
+      <h2 id="example-title">Session two on the same repository</h2>
+      <p class="lead">The agent comes back to code it explored yesterday. Without memory it reads the same files again. With arricurdAI it gets two pointers, one note and only the lines it has to change.</p>
+      <div class="compare">
+        <div class="without">
+          <h3>Without memory</h3>
+          <ul class="ledger" id="ex-without"></ul>
+          <div class="total"><span>Paid</span><span class="mono" id="ex-without-total"></span></div>
+        </div>
+        <div class="with">
+          <h3>With arricurdAI</h3>
+          <ul class="ledger" id="ex-with"></ul>
+          <div class="total"><span>Paid</span><span class="mono" id="ex-with-total"></span></div>
+        </div>
+      </div>
+      <div class="outcome">
+        <p class="figure" id="ex-saving"></p>
+        <p class="figure-sub">fewer tokens on the part of the session that rebuilds known context</p>
+      </div>
+      <p class="note">This is a calculation, not a measurement: a 30-turn session where the context is loaded at turn 3, priced with the formula above, plus one extra round trip of 0.1 × 15,000 + 300 tokens to fetch the note. The rest of the session, writing code and reading new files, costs the same in both cases. Measured numbers come from the benchmark below.</p>
+    </div>
+  </section>
+
+  <section class="block" id="threshold" aria-labelledby="threshold-title">
+    <div class="wrap">
+      <h2 id="threshold-title">Load it now, or wait until it is needed?</h2>
+      <p class="lead">Waiting is not free. Fetching later costs an extra round trip, and every round trip re-reads the whole conversation. arricurdAI loads a memory up front only when that costs less than the trip it would probably need later.</p>
+      <div class="threshold">
+        <div class="panel">
+          <div class="control">
+            <label for="t-size">Memory size</label>
+            <output id="t-size-out" for="t-size"></output>
+            <input type="range" id="t-size" min="100" max="10000" step="100" value="1500">
+          </div>
+          <div class="control">
+            <label for="t-p">Chance it is needed</label>
+            <output id="t-p-out" for="t-p"></output>
+            <input type="range" id="t-p" min="5" max="95" step="5" value="50">
+          </div>
+          <div class="control">
+            <label for="t-ctx">Conversation so far</label>
+            <output id="t-ctx-out" for="t-ctx"></output>
+            <input type="range" id="t-ctx" min="0" max="200000" step="5000" value="60000">
+          </div>
+          <div class="control">
+            <label for="t-left">Turns left</label>
+            <output id="t-left-out" for="t-left"></output>
+            <input type="range" id="t-left" min="1" max="100" step="1" value="20">
+          </div>
+          <p class="verdict" id="t-verdict" aria-live="polite"></p>
+          <p class="figure-sub" id="t-detail"></p>
+        </div>
+        <div>
+          <div class="chart-scroll"><svg class="chart" id="t-chart" viewBox="0 0 640 300" role="img" aria-labelledby="t-chart-desc"><desc id="t-chart-desc">Load-now threshold as the conversation grows</desc></svg></div>
+          <p class="formula">load now if size &lt; p × (0.1 × conversation + 300) / ((1 − p) × (1.25 + 0.1 × turns left))</p>
+          <p class="small">claude-mem measured the same effect with fixed size limits: blocking whole-file reads cost 20% more tokens on a 19 KB file with Opus, and saved about a third on a 49 KB file (<a href="https://docs.claude-mem.ai/file-read-gate.md">their evaluation</a>). The limit should move with the conversation, and here it does.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="how" aria-labelledby="how-title">
+    <div class="wrap">
+      <h2 id="how-title">How it works</h2>
+      <p class="lead">arricurdAI does not replace the memory you already have. It sits between your memory stores and the agent's context, and decides what goes in.</p>
+      <ol class="steps">
+        <li>
+          <h3>Gather candidates</h3>
+          <p>Hybrid search over the memory you already keep: CLAUDE.md, Claude Code auto memory, claude-mem observations, notes anchored to code.</p>
+        </li>
+        <li>
+          <h3>Price each one</h3>
+          <p>Rent for the turns left, freshness from code anchors, so a changed function lowers the value, and a probability of use learned from past sessions.</p>
+        </li>
+        <li>
+          <h3>Choose the form</h3>
+          <p>Nothing, a one-line pointer, a short summary or the full note, within a budget per turn. Nothing is often the right answer.</p>
+        </li>
+        <li>
+          <h3>Measure the return</h3>
+          <p>Each memory shown is checked against the tool calls that follow. Memories that cost more than they save are proposed for pruning.</p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="block" id="benchmark" aria-labelledby="bench-title">
+    <div class="wrap">
+      <h2 id="bench-title">We publish a number only after measuring it</h2>
+      <p class="lead">The benchmark runs Claude Code on real repositories, with and without arricurdAI, and anyone can run it again from the arricurdai-bench repository.</p>
+      <ul class="method">
+        <li>Five open-source repositories in different languages, each with a working test suite.</li>
+        <li>Five linked sessions per repository: the first explores an area, the next ones come back to it with different changes.</li>
+        <li>Three setups on the same tasks: no memory, Claude Code native memory, and arricurdAI.</li>
+        <li>Same model and instructions, three runs per session, every transcript kept.</li>
+        <li>Price-weighted tokens per task, success rate and turns, with 95% confidence intervals.</li>
+        <li>The headline compares against Claude Code native memory, not against no memory, and tasks where arricurdAI costs more are published too.</li>
+      </ul>
+      <div class="panel" id="results" aria-live="polite">
+        <div class="results-empty" id="results-empty">
+          <h3>No results yet</h3>
+          <p>The benchmark has not run yet. When it does, it writes results.json next to this page and this section fills in on its own.</p>
+          <button type="button" class="link-button" id="preview-sample" hidden>Preview this section with sample data</button>
+        </div>
+        <div id="results-body" hidden></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="compare" aria-labelledby="compare-title">
+    <div class="wrap">
+      <h2 id="compare-title">Works with what you already use</h2>
+      <p class="lead">Each of these tools does one part well. arricurdAI reads from them and adds the part none of them covers: what a memory costs over a session, and whether it paid off.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th scope="col">Tool</th><th scope="col">Best at</th><th scope="col">What arricurdAI adds</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Claude Code native memory</td><td>Instructions loaded every session, and an index Claude writes itself</td><td>Ranking against each request, and a check on which lines are ever used</td></tr>
+            <tr><td><a href="https://docs.claude-mem.ai/file-read-gate.md">claude-mem</a></td><td>Capturing what the agent did, with layered recall</td><td>A load-or-wait limit that moves with the conversation, and a return per memory</td></tr>
+            <tr><td><a href="https://pypi.org/project/legendary-mcp/">legendary-mcp</a>, <a href="https://pypi.org/project/omni-memory-agent/0.9.0/">omni-memory</a></td><td>Notes anchored to code that go stale when the code changes</td><td>Freshness used as a price, next to rent and probability of use</td></tr>
+            <tr><td><a href="https://mem0.ai/research-3">mem0</a>, <a href="https://github.com/harryplusplus/graphiti">Zep and Graphiti</a></td><td>Long-term memory for conversations and business data</td><td>Costs that account for turns and the prompt cache in coding sessions</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="start" aria-labelledby="start-title">
+    <div class="wrap">
+      <h2 id="start-title">Start by measuring</h2>
+      <p class="lead">The profiler reads your local Claude Code transcripts and shows where your tokens go. Nothing leaves your machine.</p>
+      <div class="start-grid">
+        <div>
+          <h3>See what you pay today</h3>
+          <pre><code>npx arricurdai profile --project .</code></pre>
+          <p class="small">Arrives with v0.1. Watch the <a data-repo="" href="#">repository</a> to know when it ships.</p>
+        </div>
+        <div>
+          <h3>Then let it choose</h3>
+          <pre><code>/plugin marketplace add YOUR-USER/arricurdai
+/plugin install arricurdai</code></pre>
+          <p class="small">The Claude Code plugin is planned for v0.2.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <p>arricurdAI is open source under the Apache-2.0 licence.</p>
+    <p>Source, design document and benchmark on <a data-repo="" href="#">GitHub</a>.</p>
+  </div>
+</footer>
+
+<script>
+(() => {
+  // Edit this once the repository exists.
+  const REPO_URL = 'https://github.com/YOUR-USER/arricurdai';
+
+  // Anthropic prompt-cache multipliers and round-trip overhead used in every calculation.
+  const W = 1.25, R = 0.1, O = 300;
+
+  const $ = (id) => document.getElementById(id);
+  const fmt = (n) => Math.round(n).toLocaleString('en-US');
+  const pct = (x) => Math.round(x * 100) + '%';
+
+  document.querySelectorAll('[data-repo]').forEach((a) => { a.href = REPO_URL + (a.dataset.repo || ''); });
+
+  // Rent meter
+  const mSize = $('m-size'), mTurns = $('m-turns'), mAt = $('m-at');
+  function updateMeter() {
+    const c = +mSize.value;
+    const T = +mTurns.value;
+    mAt.max = String(T);
+    if (+mAt.value > T) mAt.value = String(T);
+    const t = +mAt.value;
+    const paid = c * (W + R * (T - t));
+    $('m-size-out').textContent = fmt(c) + ' tokens';
+    $('m-turns-out').textContent = T + ' turns';
+    $('m-at-out').textContent = 'turn ' + t;
+    $('m-paid').textContent = fmt(paid) + ' tokens paid';
+    $('m-paid-sub').textContent = 'for ' + fmt(c) + ' tokens of memory: ' + (paid / c).toFixed(1) + '× its size, because it is read again on each of the ' + (T - t) + ' turns after it is loaded.';
+    const tiles = $('m-tiles');
+    tiles.textContent = '';
+    for (let i = 1; i <= T; i++) {
+      const d = document.createElement('div');
+      d.className = 'tile' + (i === t ? ' write' : i > t ? ' read' : '');
+      tiles.appendChild(d);
+    }
+  }
+  [mSize, mTurns, mAt].forEach((el) => el.addEventListener('input', updateMeter));
+  updateMeter();
+
+  // Worked example: 30-turn session, context loaded at turn 3.
+  const turnsLeft = 27;
+  const mult = W + R * turnsLeft;
+  const tripCost = R * 15000 + O;
+  const without = [
+    { what: 'Read src/middleware/auth.ts', loaded: 12000 },
+    { what: 'Grep "session" in src/', loaded: 2500 },
+    { what: 'Read src/routes/index.ts', loaded: 8500 }
+  ];
+  const withMem = [
+    { what: 'Two memory pointers from the hook', loaded: 50 },
+    { what: 'read_memory("auth-session-flow")', loaded: 300 },
+    { what: 'Extra round trip to fetch the note', loaded: 0, fixed: tripCost },
+    { what: 'Read auth.ts, lines 40 to 95', loaded: 1200 }
+  ];
+  const paidOf = (row) => (row.fixed !== undefined ? row.fixed : row.loaded * mult);
+  const maxPaid = Math.max(...without.map(paidOf), ...withMem.map(paidOf));
+  function renderLedger(listId, rows) {
+    const ul = $(listId);
+    let total = 0;
+    rows.forEach((row) => {
+      const paid = paidOf(row);
+      total += paid;
+      const li = document.createElement('li');
+      const loadedText = row.fixed !== undefined ? 'paid once, not kept in context' : fmt(row.loaded) + ' tokens loaded';
+      li.innerHTML = '<div class="line"><span class="what"></span><span class="paid"></span></div><div class="loaded"></div><div class="bar"></div>';
+      li.querySelector('.what').textContent = row.what;
+      li.querySelector('.paid').textContent = fmt(paid);
+      li.querySelector('.loaded').textContent = loadedText;
+      li.querySelector('.bar').style.width = Math.max(0.5, (paid / maxPaid) * 100) + '%';
+      ul.appendChild(li);
+    });
+    return total;
+  }
+  const totalWithout = renderLedger('ex-without', without);
+  const totalWith = renderLedger('ex-with', withMem);
+  $('ex-without-total').textContent = fmt(totalWithout);
+  $('ex-with-total').textContent = fmt(totalWith);
+  $('ex-saving').textContent = pct(1 - totalWith / totalWithout) + ' less';
+
+  // Load-now threshold
+  const tSize = $('t-size'), tP = $('t-p'), tCtx = $('t-ctx'), tLeft = $('t-left');
+  const threshold = (p, L, n) => (p * (R * L + O)) / ((1 - p) * (W + R * n));
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  function svgEl(name, attrs, text) {
+    const el = document.createElementNS(SVGNS, name);
+    Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, String(v)));
+    if (text !== undefined) el.textContent = text;
+    return el;
+  }
+  function updateThreshold() {
+    const c = +tSize.value, p = +tP.value / 100, L = +tCtx.value, n = +tLeft.value;
+    $('t-size-out').textContent = fmt(c) + ' tokens';
+    $('t-p-out').textContent = Math.round(p * 100) + '%';
+    $('t-ctx-out').textContent = fmt(L) + ' tokens';
+    $('t-left-out').textContent = String(n);
+    const thr = threshold(p, L, n);
+    const now = c < thr;
+    $('t-verdict').textContent = now ? 'Load it now' : 'Wait until it is needed';
+    $('t-detail').textContent = 'Load-now limit: ' + fmt(thr) + ' tokens. This memory is ' + fmt(c) + (now ? ', below the limit.' : ', above the limit.');
+
+    const svg = $('t-chart');
+    [...svg.querySelectorAll(':scope > :not(desc)')].forEach((el) => el.remove());
+    const left = 72, right = 624, top = 16, bottom = 250;
+    const xMax = 200000;
+    const yMax = Math.max(threshold(p, xMax, n), c) * 1.1;
+    const x = (v) => left + (v / xMax) * (right - left);
+    const y = (v) => bottom - (v / yMax) * (bottom - top);
+    svg.appendChild(svgEl('line', { class: 'axis', x1: left, y1: bottom, x2: right, y2: bottom }));
+    svg.appendChild(svgEl('line', { class: 'axis', x1: left, y1: top, x2: left, y2: bottom }));
+    [0, 50000, 100000, 150000, 200000].forEach((v) => {
+      svg.appendChild(svgEl('text', { x: x(v), y: bottom + 18, 'text-anchor': 'middle' }, v === 0 ? '0' : (v / 1000) + 'k'));
+    });
+    for (let i = 0; i <= 4; i++) {
+      const v = (yMax / 4) * i;
+      svg.appendChild(svgEl('text', { x: left - 8, y: y(v) + 4, 'text-anchor': 'end' }, fmt(v)));
+    }
+    svg.appendChild(svgEl('text', { x: (left + right) / 2, y: 292, 'text-anchor': 'middle' }, 'Conversation so far (tokens)'));
+    let d = '';
+    for (let i = 0; i <= 40; i++) {
+      const v = (xMax / 40) * i;
+      d += (i === 0 ? 'M' : 'L') + x(v).toFixed(1) + ' ' + y(threshold(p, v, n)).toFixed(1);
+    }
+    svg.appendChild(svgEl('path', { class: 'curve', d }));
+    svg.appendChild(svgEl('line', { class: 'mem', x1: left, y1: y(c), x2: right, y2: y(c) }));
+    svg.appendChild(svgEl('text', { x: right, y: y(c) - 8, 'text-anchor': 'end' }, 'this memory: ' + fmt(c)));
+    svg.appendChild(svgEl('text', { x: x(xMax * 0.6), y: y(threshold(p, xMax * 0.6, n)) - 12, 'text-anchor': 'end' }, 'load-now limit'));
+    svg.appendChild(svgEl('circle', { class: 'dot', cx: x(L), cy: y(thr), r: 6 }));
+    $('t-chart-desc').textContent = 'Load-now limit as the conversation grows. At ' + fmt(L) + ' tokens of conversation the limit is ' + fmt(thr) + ' tokens; this memory is ' + fmt(c) + ' tokens.';
+  }
+  [tSize, tP, tCtx, tLeft].forEach((el) => el.addEventListener('input', updateThreshold));
+  updateThreshold();
+
+  // Benchmark results
+  const SAMPLE = {
+    version: 'sample', date: 'n/a', model: 'n/a', repos: 5, sessions: 75,
+    headline: { vs: 'native', savings: 0.60, ci: [0.52, 0.67], success_delta_pt: -1.0 },
+    arms: [
+      { id: 'none', label: 'No memory', k_mean: 412000, k_ci: [380000, 445000], success: 0.78, turns_mean: 31 },
+      { id: 'native', label: 'Claude Code native memory', k_mean: 356000, k_ci: [329000, 384000], success: 0.80, turns_mean: 28 },
+      { id: 'arricurdai', label: 'arricurdAI', k_mean: 142000, k_ci: [128000, 158000], success: 0.79, turns_mean: 22 }
+    ],
+    per_repo: [
+      { repo: 'sample/repo-1', lang: 'TypeScript', k: { none: 398000, native: 341000, arricurdai: 131000 } },
+      { repo: 'sample/repo-2', lang: 'Python', k: { none: 455000, native: 392000, arricurdai: 170000 } },
+      { repo: 'sample/repo-3', lang: 'Go', k: { none: 371000, native: 330000, arricurdai: 128000 } },
+      { repo: 'sample/repo-4', lang: 'Rust', k: { none: 430000, native: 371000, arricurdai: 150000 } },
+      { repo: 'sample/repo-5', lang: 'Java', k: { none: 406000, native: 346000, arricurdai: 131000 } }
+    ]
+  };
+
+  function renderResults(data, isSample) {
+    const body = $('results-body');
+    body.textContent = '';
+    if (isSample) {
+      const b = document.createElement('p');
+      b.className = 'sample-banner';
+      b.textContent = 'Sample data for a layout preview. Nothing in this section was measured.';
+      body.appendChild(b);
+    }
+    const h = data.headline;
+    const head = document.createElement('p');
+    head.className = 'headline';
+    head.textContent = pct(h.savings) + ' fewer price-weighted tokens per task than Claude Code native memory';
+    body.appendChild(head);
+    const meta = document.createElement('p');
+    meta.className = 'small';
+    const delta = (h.success_delta_pt >= 0 ? '+' : '') + h.success_delta_pt.toFixed(1);
+    meta.textContent = '95% confidence interval ' + pct(h.ci[0]) + ' to ' + pct(h.ci[1]) + '. Success rate change: ' + delta + ' points. ' + data.repos + ' repositories, ' + data.sessions + ' sessions, model ' + data.model + ', run on ' + data.date + '.';
+    body.appendChild(meta);
+
+    // Bar chart of mean tokens per task with confidence intervals
+    const arms = data.arms;
+    const rowH = 56, left = 210, right = 540, top = 12;
+    const height = top + arms.length * rowH + 30;
+    const svg = svgEl('svg', { class: 'chart', viewBox: '0 0 640 ' + height, role: 'img', 'aria-label': 'Mean price-weighted tokens per task by setup, with 95% confidence intervals' });
+    const xMax = Math.max(...arms.map((a) => a.k_ci[1])) * 1.08;
+    const x = (v) => left + (v / xMax) * (right - left);
+    arms.forEach((a, i) => {
+      const yMid = top + i * rowH + rowH / 2;
+      const isOurs = a.id === 'arricurdai';
+      svg.appendChild(svgEl('text', { x: left - 12, y: yMid - 2, 'text-anchor': 'end' }, a.label));
+      svg.appendChild(svgEl('text', { x: left - 12, y: yMid + 14, 'text-anchor': 'end' }, 'success ' + pct(a.success)));
+      svg.appendChild(svgEl('rect', { x: left, y: yMid - 12, width: Math.max(1, x(a.k_mean) - left), height: 24, rx: 2, style: 'fill: var(' + (isOurs ? '--saffron' : '--cobalt') + ')' }));
+      svg.appendChild(svgEl('line', { x1: x(a.k_ci[0]), y1: yMid, x2: x(a.k_ci[1]), y2: yMid, style: 'stroke: var(--ink); stroke-width: 1.5' }));
+      [a.k_ci[0], a.k_ci[1]].forEach((v) => svg.appendChild(svgEl('line', { x1: x(v), y1: yMid - 7, x2: x(v), y2: yMid + 7, style: 'stroke: var(--ink); stroke-width: 1.5' })));
+      svg.appendChild(svgEl('text', { x: x(a.k_ci[1]) + 10, y: yMid + 4 }, fmt(a.k_mean)));
+    });
+    svg.appendChild(svgEl('text', { x: (left + right) / 2, y: height - 6, 'text-anchor': 'middle' }, 'Price-weighted tokens per task (mean, 95% CI)'));
+    const scroll = document.createElement('div');
+    scroll.className = 'chart-scroll';
+    scroll.appendChild(svg);
+    body.appendChild(scroll);
+
+    // Per-repository table
+    if (Array.isArray(data.per_repo) && data.per_repo.length) {
+      const wrap = document.createElement('div');
+      wrap.className = 'table-wrap';
+      const rows = data.per_repo.map((r) => {
+        const save = 1 - r.k.arricurdai / r.k.native;
+        return '<tr><td></td><td></td><td class="num">' + fmt(r.k.none) + '</td><td class="num">' + fmt(r.k.native) + '</td><td class="num">' + fmt(r.k.arricurdai) + '</td><td class="num">' + pct(save) + '</td></tr>';
+      }).join('');
+      wrap.innerHTML = '<table><thead><tr><th scope="col">Repository</th><th scope="col">Language</th><th scope="col" class="num">No memory</th><th scope="col" class="num">Native</th><th scope="col" class="num">arricurdAI</th><th scope="col" class="num">Saving vs native</th></tr></thead><tbody>' + rows + '</tbody></table>';
+      const trs = wrap.querySelectorAll('tbody tr');
+      data.per_repo.forEach((r, i) => {
+        trs[i].children[0].textContent = r.repo;
+        trs[i].children[1].textContent = r.lang;
+      });
+      body.appendChild(wrap);
+    }
+
+    $('results-empty').hidden = true;
+    body.hidden = false;
+    if (!isSample) {
+      $('hero-status').innerHTML = '';
+      const s = document.createElement('strong');
+      s.textContent = 'Measured: ' + pct(h.savings) + ' fewer tokens per task than Claude Code native memory';
+      $('hero-status').append(s, ' (95% CI ' + pct(h.ci[0]) + ' to ' + pct(h.ci[1]) + '). ');
+      const a = document.createElement('a');
+      a.href = '#benchmark';
+      a.textContent = 'See the method';
+      $('hero-status').append(a);
+    }
+  }
+
+  async function loadResults() {
+    try {
+      const res = await fetch('results.json', { cache: 'no-store' });
+      if (!res.ok) throw new Error('missing');
+      renderResults(await res.json(), false);
+    } catch (e) {
+      // No published results: the sample preview is offered only outside GitHub Pages.
+      if (!location.hostname.endsWith('github.io')) {
+        const btn = $('preview-sample');
+        btn.hidden = false;
+        btn.addEventListener('click', () => renderResults(SAMPLE, true), { once: true });
+      }
+    }
+  }
+  loadResults();
+})();
+</script>
+</body>
+</html>

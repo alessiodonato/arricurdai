@@ -1,0 +1,2 @@
+- [Checkout flow](checkout-flow.md) — totals are computed in `computeTotals()` in `src/checkout.ts`
+- [Billing webhooks](billing.md) — Stripe events arrive in `src/billing/webhook.ts`
