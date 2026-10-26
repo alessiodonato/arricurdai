@@ -446,7 +446,7 @@ footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; g
     <article class="card tool reveal">
       <span class="tag">hook · SessionStart</span>
       <h3>handoff: start fresh, keep the thread</h3>
-      <p>After that <code>/clear</code>, it gives the new session a note built from the transcript, without a model: the last requests, the files changed, the open tasks and the last reply.</p>
+      <p>After that <code>/clear</code>, it gives the new session a note built from the transcript, without a model: the last requests, the files changed, the open tasks and the last reply. It also tells every new session how to run <code>recall</code>, which searches past sessions.</p>
       <div class="code"><pre><code>arricurdai handoff</code></pre></div>
     </article>
   </div>
@@ -518,7 +518,7 @@ node packages/cli/dist/bin.js profile --project /path/to/project</code></pre></d
   "hooks": {
     "UserPromptSubmit": [{ "hooks": [{ "type": "command",
       "command": "node /path/to/arricurdai/packages/cli/dist/bin.js guard" }] }],
-    "SessionStart": [{ "matcher": "clear", "hooks": [{ "type": "command",
+    "SessionStart": [{ "hooks": [{ "type": "command",
       "command": "node /path/to/arricurdai/packages/cli/dist/bin.js handoff" }] }]
   }
 }</code></pre></div>
@@ -535,7 +535,7 @@ node packages/cli/dist/bin.js profile --project /path/to/project</code></pre></d
   <div class="roadmap">
     <article class="card phase done reveal"><span class="status">✓ Done</span><h3>Profile</h3><p>The price-weighted cost of every session, where it goes, and what other compaction policies would have saved.</p></article>
     <article class="card phase done reveal"><span class="status">✓ Done</span><h3>Guard and handoff</h3><p>No cache rewrite after a pause: a new session with a note, chosen by you.</p></article>
-    <article class="card phase next reveal"><span class="status">→ Next</span><h3>Recall</h3><p>A local, lexical search over past sessions, so the agent can keep a small context and still find what was decided.</p></article>
+    <article class="card phase next reveal"><span class="status">✓ New</span><h3>Recall</h3><p><code>arricurdai recall "&lt;words&gt;"</code> searches past sessions, locally and without a model. The agent can keep a small context and still find what was decided.</p></article>
   </div>
 </section>
 

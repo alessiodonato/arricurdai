@@ -252,7 +252,7 @@ The prompt cache keeps the context of a main session for an hour. After a longer
 Two hooks do this for you:
 
 - **`arricurdai guard`** runs when you send a prompt. If the cache of a session larger than 100,000 tokens has expired, it stops the prompt once and says what going on would cost. Run `/clear` to start fresh, or send the prompt again to go on.
-- **`arricurdai handoff`** runs when a session starts after that `/clear`. It gives the new session a note on the old one, built from the transcript without a model: the last requests, the files changed, the open tasks and the last reply.
+- **`arricurdai handoff`** runs when a session starts. After that `/clear`, it gives the new session a note on the old one, built from the transcript without a model: the last requests, the files changed, the open tasks and the last reply. It adds the passages of earlier sessions that match the prompt you were about to send. In every new session, and after a compaction, it adds one line on how to run [`recall`](#recall-find-what-earlier-sessions-said).
 
 Add them to `~/.claude/settings.json`, or to `.claude/settings.json` for one project:
 
@@ -260,12 +260,46 @@ Add them to `~/.claude/settings.json`, or to `.claude/settings.json` for one pro
 {
   "hooks": {
     "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "arricurdai guard" }] }],
-    "SessionStart": [{ "matcher": "clear", "hooks": [{ "type": "command", "command": "arricurdai handoff" }] }]
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "arricurdai handoff" }] }]
   }
 }
 ```
 
 `arricurdai guard --min-tokens <n>` changes the smallest session worth stopping for. Both hooks read local files only, and on any problem they let the prompt through.
+
+## Recall: find what earlier sessions said
+
+A small context is cheaper, but the agent loses what it no longer sees. `arricurdai recall` lets it look that up:
+
+```sh
+arricurdai recall "invoice vat foreign customers" --project /path/to/project
+```
+
+It searches the earlier Claude Code sessions of the project and prints the few passages that match. Each passage comes from one of these:
+
+- a request with the replies to it;
+- the files changed after the request;
+- a part of a compaction summary.
+
+How it works:
+
+- **The search is lexical (BM25), without a model.** It reads local files only.
+- **Matches across word forms.** It folds singular and plural in Italian and English, so `fattura` finds `fatture`, and it splits identifiers such as `MethodAllowList`.
+- **What it leaves out.**
+  - Tool results: the files they show can be read again.
+  - The current session: when Claude Code runs the command, it already has that session.
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| `--limit <n>` | 5 | The most passages to show. |
+| `--max-tokens <n>` | 1500 | The most tokens to print. The first passage is always printed. |
+| `--json` | | Prints the passages as JSON. |
+| `--project <path>`, `--transcripts <dir>` | current folder | As for `profile`. |
+
+Limits:
+
+- **It sees only the transcripts Claude Code keeps.** By default Claude Code deletes them after 30 days. To search further back, raise `cleanupPeriodDays` in `~/.claude/settings.json`.
+- **It works best with precise words.** It finds names, paths, errors and technical terms well. It does less well with vague questions.
 
 ## Baseline on public repositories
 

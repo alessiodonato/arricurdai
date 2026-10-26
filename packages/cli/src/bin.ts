@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { Command } from 'commander';
 import pc from 'picocolors';
 import { DEFAULT_MIN_TOKENS, DEFAULT_STATE_DIR, type HookIO, runGuard, runHandoff } from './guard';
+import { type RecallCommandOptions, runRecall } from './recall';
 import { type ProfileCommandOptions, runProfile } from './run-profile';
 
 const { version } = createRequire(import.meta.url)('../package.json') as { version: string };
@@ -36,7 +37,32 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-const hookIO = (): HookIO => ({ stdout: (text) => process.stdout.write(text), now: () => new Date(), stateDir: DEFAULT_STATE_DIR });
+const hookIO = (): HookIO => ({
+  stdout: (text) => process.stdout.write(text),
+  now: () => new Date(),
+  stateDir: DEFAULT_STATE_DIR,
+  recallCommand: `node "${process.argv[1]}" recall`,
+});
+
+program
+  .command('recall')
+  .description('Search the earlier Claude Code sessions of a project for what was asked, decided and changed. Reads local files only.')
+  .argument('<words...>', 'what to look for')
+  .option('--project <path>', 'project folder', '.')
+  .option('--transcripts <dir>', 'transcript folder of the project (default: found from the project path)')
+  .option('--limit <n>', 'most matches to show', '5')
+  .option('--max-tokens <n>', 'most tokens to print', '1500')
+  .option('--json', 'print the matches as JSON')
+  .action(async (words: string[], options: RecallCommandOptions) => {
+    process.exitCode = await runRecall(words, options, {
+      cwd: process.cwd(),
+      env: process.env,
+      stdout: (text) => process.stdout.write(text),
+      stderr: (text) => process.stderr.write(text),
+      now: () => new Date(),
+      colors: false,
+    });
+  });
 
 program
   .command('guard')

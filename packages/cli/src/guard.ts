@@ -1,10 +1,12 @@
 import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
+import { formatHits, loadChunks, search } from './recall';
 
 // Two Claude Code hooks. `guard` (UserPromptSubmit) stops the first prompt after a pause that let the
 // prompt cache of a large session expire: going on would write the whole context to the cache again.
-// `handoff` (SessionStart) gives the session started with /clear a note on the one the guard stopped.
+// `handoff` (SessionStart) gives the session started with /clear a note on the one the guard stopped, with
+// the earlier context that matches the stopped prompt, and tells every new session how to run recall.
 // Both fail open: on any problem they print nothing and the prompt goes through.
 
 /** The last API call of a session, read from the end of its transcript. */
@@ -22,6 +24,8 @@ export interface HookIO {
   now: () => Date;
   /** Folder for the small files that link a stopped prompt to the next /clear. */
   stateDir: string;
+  /** The command an agent runs to search earlier sessions, for the hint every new session gets. */
+  recallCommand?: string;
 }
 
 export const DEFAULT_STATE_DIR = join(tmpdir(), 'arricurdai');
@@ -64,6 +68,7 @@ interface HookInput {
   transcript_path?: string;
   cwd?: string;
   source?: string;
+  prompt?: string;
 }
 
 function parse<T>(line: string): T | undefined {
@@ -151,7 +156,7 @@ export function runGuard(stdin: string, options: { minTokens?: string }, io: Hoo
       return 0;
     }
     writeFileSync(seen, String(call.at));
-    writeFileSync(marker, JSON.stringify({ transcript: input.transcript_path, context: call.context, at: io.now().getTime() }));
+    writeFileSync(marker, JSON.stringify({ transcript: input.transcript_path, context: call.context, at: io.now().getTime(), prompt: input.prompt }));
     io.stdout(JSON.stringify({ decision: 'block', reason: message }));
     return 0;
   } catch {
@@ -204,19 +209,40 @@ export function handoffNote(text: string, cwd: string | undefined, context: numb
   return parts.join('\n\n');
 }
 
-/** SessionStart hook. After a /clear that follows a stopped prompt, prints the note as additional context. */
+/** The note on the session the guard stopped, and the earlier context that matches the prompt it stopped. */
+function afterClear(input: HookInput & { transcript_path: string }, io: HookIO): string[] {
+  const marker = markerPath(io.stateDir, input.transcript_path);
+  if (!existsSync(marker)) return [];
+  const pending = parse<{ transcript?: string; context?: number; at?: number; prompt?: string }>(readFileSync(marker, 'utf8'));
+  rmSync(marker, { force: true });
+  if (!pending?.transcript || pending.transcript === input.transcript_path) return [];
+  if (!(io.now().getTime() - (pending.at ?? 0) < MARKER_MAX_AGE)) return [];
+  const note = handoffNote(readFileSync(pending.transcript, 'utf8'), input.cwd, pending.context ?? 0);
+  if (!note) return [];
+  const parts = [note];
+  const prompt = pending.prompt?.trim();
+  if (prompt) {
+    const { chunks, sessions } = loadChunks(dirname(input.transcript_path), input.session_id);
+    const hits = search(chunks, prompt, 3);
+    if (hits.length > 0) parts.push(`Earlier context that matches the prompt you were about to send:\n${formatHits(hits, shorten(prompt, 80), sessions, 800)}`);
+  }
+  return parts;
+}
+
+/**
+ * SessionStart hook. After a /clear that follows a stopped prompt, prints the note as additional context.
+ * On every start it also tells the agent how to search earlier sessions.
+ */
 export function runHandoff(stdin: string, io: HookIO): number {
   try {
     const input = parse<HookInput>(stdin);
-    if (!input?.transcript_path || input.source !== 'clear') return 0;
-    const marker = markerPath(io.stateDir, input.transcript_path);
-    if (!existsSync(marker)) return 0;
-    const pending = parse<{ transcript?: string; context?: number; at?: number }>(readFileSync(marker, 'utf8'));
-    rmSync(marker, { force: true });
-    if (!pending?.transcript || pending.transcript === input.transcript_path) return 0;
-    if (!(io.now().getTime() - (pending.at ?? 0) < MARKER_MAX_AGE)) return 0;
-    const note = handoffNote(readFileSync(pending.transcript, 'utf8'), input.cwd, pending.context ?? 0);
-    if (note) io.stdout(JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: note } }));
+    if (!input?.transcript_path) return 0;
+    const parts = input.source === 'clear' ? afterClear({ ...input, transcript_path: input.transcript_path }, io) : [];
+    if (io.recallCommand) {
+      const why = input.source === 'compact' ? 'The summary of this session leaves out details. ' : '';
+      parts.push(`${why}To look up what was asked, decided or changed in earlier sessions of this project, run: ${io.recallCommand} "<words>"`);
+    }
+    if (parts.length > 0) io.stdout(JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: parts.join('\n\n') } }));
     return 0;
   } catch {
     return 0;
