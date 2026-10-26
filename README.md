@@ -74,6 +74,8 @@ Memory lines never used in the last 3 sessions
 
 The fixtures contain broken lines on purpose. The profiler counts them in "Lines skipped" and goes on.
 
+The report ends with a fourth part, [where the cost goes](#where-the-cost-goes). It is left out here, because the usage numbers of the fixtures are invented and do not match their content.
+
 ## How it measures
 
 Every cost is in price-weighted tokens, that is, in units of the price of one input token. A **turn** is one API call: each call reads the whole context again, from the prompt cache.
@@ -162,12 +164,71 @@ All prices are relative to the price of one input token.
 { "w1h": 2, "overhead": 400 }
 ```
 
+### Where the cost goes
+
+The last part of the report splits the measured cost of every session among the blocks that made it up. The blocks are:
+
+- the replies;
+- the thinking;
+- each tool result;
+- the prompts;
+- the memory files;
+- the text Claude Code adds;
+- the system prompt and tools.
+
+The parts add up to the measured cost exactly:
+
+- **Cache reads** of each call are split among the blocks already in the context, in proportion to their size. That is the rent a block pays for staying.
+- **Input and cache writes** of a call go to the blocks that entered just before it.
+- **Block sizes** are estimated from their text, then calibrated on how much the context really grew between two calls, which the usage measures exactly. Thinking is sized from the usage, and images from their pixels.
+- **The prefix.** At the first call, what the blocks do not explain is the system prompt, tools and skills. After a compaction or a rewind, it is the context carried over.
+- **A cache rebuild** is a call that wrote the previous context to the cache again instead of reading it, as happens after a pause longer than the cache lifetime. The extra cost is a line of its own.
+- **Writing output** costs `mu` per token.
+
+An example from the [showcase](showcase), five short sessions on `gin-gonic/gin`:
+
+```
+Where the cost goes
+  What                                                  Tokens          Cost   Share
+  Writing output                                                      58,245     27%
+  Text added by Claude Code                             27,899        57,731     26%
+  Tool results: Bash                                    22,794        50,619     23%
+  System prompt, tools and skills                       43,830        20,467    9.4%
+  Memory files                                           8,403        16,297    7.4%
+  Assistant replies and tool calls                       3,977         8,274    3.8%
+  Your prompts                                           1,765         4,163    1.9%
+  Tool results: Read                                     1,058         2,223    1.0%
+  … 2 more under 1.0% each, with --json
+  Known blocks explain 100% of the cost; the rest is context the transcript does not record.
+
+   #  Most costly blocks                                Tokens   Turn   Kept         Cost
+   1  Bash: sed -n 340,410p gin.go; sed -n 685,815p…     5,300      3      2       11,662
+   2  Bash: sed -n 253,420p tree.go; sed -n 420,676…     4,885      3      2       10,748
+   3  Bash: ls -a; ls .github .cursor* 2>/dev/null;…     3,206      2      5        8,017
+   4  Claude Code: skill_listing                         2,964      1      6        7,705
+   5  Claude Code: skill_listing                         2,992      1      4        7,179
+   6  System prompt, tools and skills                    9,197      1      6        6,880
+   7  Claude Code: skill_listing                         2,961      1      3        5,804
+   8  Claude Code: skill_listing                         3,494      1      2        5,666
+   9  Claude Code: skill_listing                         3,025      1      2        5,535
+  10  System prompt, tools and skills                    8,661      1      4        4,864
+  Turn: the API call where the block entered the context. Kept: the calls that read it again.
+```
+
+In sessions this short, most of the cost is output, the commands' results and the text Claude Code adds to every session. The list of skills alone is about 3,000 tokens. In long interactive sessions the picture changes:
+
+- blocks stay in the context for hundreds of calls;
+- thinking stays in the context too;
+- every pause longer than the cache lifetime writes the whole context again, at the price of a cache write.
+
 ### What is approximate
 
 - Token counts are estimates: characters / 4, computed in one function (`estimateTokens`) so that a tokenizer can replace it.
 - A Bash command that reads several files splits its output evenly among them.
 - git only sees committed changes. A file edited outside Claude Code and never committed looks unchanged. Without git, the report says so.
 - Only rediscoveries across sessions are counted, not re-reads within one session.
+- The breakdown assumes every block stays until the next compaction or rewind. Claude Code can also clear old blocks on its own, which the transcript does not record.
+- Costs are in price-weighted tokens of each call's own model. A session that switches model mixes prices, and starts again from an empty cache.
 - The transcript format belongs to Claude Code and is not documented. [docs/transcript-schema.md](docs/transcript-schema.md) records what was observed in versions 2.1.301 and 2.1.310. Lines the parser does not understand are counted and skipped.
 
 ## Baseline on public repositories

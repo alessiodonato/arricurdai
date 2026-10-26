@@ -37,7 +37,7 @@ async function run(options: ProfileCommandOptions, env: Record<string, string> =
 }
 
 describe('arricurdai profile on the fixtures', () => {
-  test('prints the summary, the top rediscoveries and the unused memory lines, in this order', async () => {
+  test('prints the summary, the top rediscoveries, the unused memory lines and where the cost goes, in this order', async () => {
     const { code, stdout, stderr } = await run(FIXTURE);
     expect(code).toBe(0);
     expect(stderr).toBe('');
@@ -47,6 +47,7 @@ describe('arricurdai profile on the fixtures', () => {
     expect(summary).toBeGreaterThan(-1);
     expect(rediscoveries).toBeGreaterThan(summary);
     expect(memory).toBeGreaterThan(rediscoveries);
+    expect(stdout.indexOf('Where the cost goes')).toBeGreaterThan(memory);
     expect(stdout).toContain('S_max                   0.61% of the cost: a ceiling on savings, not a promise');
     expect(stdout).toContain('Mean cost K             55,728 price-weighted tokens per session');
     expect(stdout).toMatch(/ 1 {2}src\/checkout\.ts +3 +270 +621\n/);

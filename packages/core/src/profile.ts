@@ -1,9 +1,18 @@
 import { posix } from 'node:path';
+import { type Breakdown, groupLabel, sessionBreakdown } from './breakdown';
 import { type CostParams, DEFAULT_COST_PARAMS } from './config';
 import { maxSavings, sumUsage, weightedCost } from './cost';
 import { classifyMemoryLines, type MemoryCost, type MemoryDocument, type MemoryLine, memoryLoadCosts } from './memory';
 import { type ChangeOracle, judgeReads, type ReadVerdict } from './rediscovery';
-import { type MemoryFileReport, type RediscoveryReport, type Report, reportSchema, type SessionReport } from './report';
+import {
+  type CostBlockReport,
+  type CostGroupReport,
+  type MemoryFileReport,
+  type RediscoveryReport,
+  type Report,
+  reportSchema,
+  type SessionReport,
+} from './report';
 import type { ProfileInput, ProfileSession, SessionMemory } from './session';
 import { estimateTokens } from './tokens';
 
@@ -58,6 +67,7 @@ interface SessionMeasure {
   cacheRead: number;
   inputSide: number;
   memory: MemoryCost[];
+  breakdown: Breakdown;
 }
 
 function measureSession(session: ProfileSession, verdicts: readonly ReadVerdict[], params: CostParams): SessionMeasure {
@@ -70,12 +80,14 @@ function measureSession(session: ProfileSession, verdicts: readonly ReadVerdict[
   const rediscovered = verdicts.filter((verdict) => verdict.rediscovery);
   const memory = contexts.flatMap((context) => memoryLoadCosts(context, params));
   const startMemory = new Map(session.main.memory.filter((load) => load.source === 'instructions').map((load) => [load.path, load.tokens]));
+  const breakdown = sessionBreakdown(session, params);
 
   return {
     session,
     cacheRead: usage.cacheRead,
     inputSide,
     memory,
+    breakdown,
     report: {
       sessionId: session.sessionId,
       ...(session.startedAt === undefined ? {} : { startedAt: session.startedAt }),
@@ -91,7 +103,39 @@ function measureSession(session: ProfileSession, verdicts: readonly ReadVerdict[
       memoryTokens: sum([...startMemory.values()]),
       memoryCost: sum(memory.map((load) => load.cost)),
       compactions: sum(contexts.map((context) => context.compactions.length)),
+      cacheRebuilds: breakdown.cacheRebuilds,
     },
+  };
+}
+
+const TOP_BLOCKS = 10;
+
+/** Groups the cost items of the window, and picks its most costly blocks. */
+function summarizeBreakdown(measures: readonly SessionMeasure[]): Report['breakdown'] {
+  const total = sum(measures.map((measure) => measure.report.cost));
+  const groups = new Map<string, CostGroupReport>();
+  const blocks: CostBlockReport[] = [];
+  for (const { session, report, breakdown } of measures) {
+    for (const item of breakdown.items) {
+      const group = groups.get(item.group) ?? { group: item.group, label: groupLabel(item.group), tokens: 0, cost: 0, share: 0 };
+      group.tokens += item.tokens;
+      group.cost += item.cost;
+      groups.set(item.group, group);
+      if (item.turn !== undefined && item.tokens > 0) {
+        blocks.push({
+          sessionId: session.sessionId, group: item.group, label: item.label, tokens: item.tokens, turn: item.turn,
+          turnsKept: item.turnsKept, cost: item.cost, share: report.cost === 0 ? 0 : item.cost / report.cost,
+        });
+      }
+    }
+  }
+  // Everything but the context the transcript does not record is explained by a known block or cost.
+  const unrecorded = groups.get('unrecorded')?.cost ?? 0;
+  return {
+    groups: [...groups.values()].map((group) => ({ ...group, share: total === 0 ? 0 : group.cost / total })).sort((a, b) => b.cost - a.cost),
+    topBlocks: blocks.sort((a, b) => b.cost - a.cost).slice(0, TOP_BLOCKS),
+    explained: total === 0 ? 0 : Math.max(0, 1 - unrecorded / total),
+    cacheRebuilds: sum(measures.map((measure) => measure.breakdown.cacheRebuilds)),
   };
 }
 
@@ -219,6 +263,7 @@ export function profile(input: ProfileInput, options: ProfileOptions): Report {
       unverifiableLines: lines.unverifiable.map(toLineReport),
       usedLines: lines.used.length,
     },
+    breakdown: summarizeBreakdown(measures),
     approximations,
     lines: {
       total: input.stats.lines,

@@ -50,6 +50,27 @@ describe('renderReport', () => {
     expect(renderReport(report, { colors: false })).toContain('Memory lines never used in the last session\n');
   });
 
+  test('shows where the cost goes, with the cache rebuilds and the costliest blocks', () => {
+    const report = emptyReport();
+    report.breakdown = {
+      groups: [
+        { group: 'rebuild', label: 'Cache rebuilt after a pause', tokens: 0, cost: 44_490_054, share: 0.278 },
+        { group: 'tool:Bash', label: 'Tool results: Bash', tokens: 720_665, cost: 12_635_816, share: 0.079 },
+        { group: 'tool:Web', label: 'Tool results: Web', tokens: 2_526, cost: 23_571, share: 0.0001 },
+      ],
+      topBlocks: [{ sessionId: 's1', group: 'tool:Bash', label: 'Bash: npm run build', tokens: 12_400, turn: 230, turnsKept: 1_985, cost: 2_400_000, share: 0.02 }],
+      explained: 0.983,
+      cacheRebuilds: 41,
+    };
+    const text = renderReport(report, { colors: false });
+    expect(text).toContain('Where the cost goes');
+    expect(text).toMatch(/Cache rebuilt after a pause \(41 times\) +44,490,054 +28%\n/);
+    expect(text).toMatch(/Tool results: Bash +720,665 +12,635,816 +7\.9%\n/);
+    expect(text).toContain('… 1 more under 1.0% each, with --json');
+    expect(text).toContain('Known blocks explain 98% of the cost');
+    expect(text).toMatch(/ 1 {2}Bash: npm run build +12,400 +230 +1,985 +2,400,000\n/);
+  });
+
   test('marks the approximations', () => {
     const report = emptyReport();
     report.approximations = ['The project has no git history.'];

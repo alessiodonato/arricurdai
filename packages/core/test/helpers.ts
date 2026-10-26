@@ -13,7 +13,7 @@ export function read(key: string, overrides: Partial<SessionRead> = {}): Session
 }
 
 export function context(overrides: Partial<SessionContext> = {}): SessionContext {
-  return { kind: 'main', calls: calls(10), compactions: [], reads: [], memory: [], cacheTtl: '1h', ...overrides };
+  return { kind: 'main', calls: calls(10), compactions: [], reads: [], memory: [], blocks: [], cacheTtl: '1h', ...overrides };
 }
 
 export function session(sessionId: string, startedAt: string, overrides: Partial<ProfileSession> = {}): ProfileSession {

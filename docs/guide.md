@@ -69,6 +69,21 @@ These are lines of your memory files whose terms (code spans, paths, file names,
 
 Lines with nothing to check, such as "answer briefly", are counted apart. The profiler cannot tell whether a rule of style was followed.
 
+### Where the cost goes
+
+The last part splits the cost of the measured sessions among what made it up, with the ten most costly blocks. It is often the part with the most to act on:
+
+| Line | What to do when it is large |
+| --- | --- |
+| Cache rebuilt after a pause | The cache keeps a context for about an hour. Coming back to a long session after a longer break writes the whole context again, at twice the input price. Before a long break, run `/compact`. Or start a new session afterwards, with a short note of where you were. |
+| Assistant thinking | Thinking stays in the context of later calls. Use less thinking for routine work. |
+| Tool results: Bash, MCP, Read | Large outputs stay in the context until the next compaction. Read ranges of files instead of whole files, and keep logs out of the conversation. Screenshots from browser tools cost about 1,500 tokens each. |
+| Assistant replies and tool calls | Long replies are read again on every later call, like everything else. |
+| System prompt, tools and skills; Text added by Claude Code | A fixed cost on every call. MCP servers and plugins you do not use make it larger. |
+| Context carried over a compaction or a rewind | What `/compact` keeps, and the history before a rewind. |
+
+"Known blocks explain …" says how much of the cost the breakdown can attribute. The rest is growth of the context that the transcript does not record.
+
 ## 5. Options
 
 | Option | Example | When to use it |
@@ -83,7 +98,8 @@ Some ways to read the JSON with `jq`:
 ```sh
 arricurdai profile --json | jq '.summary'
 arricurdai profile --json | jq -r '.memory.unusedLines[] | "\(.file):\(.line)  \(.text)"'
-arricurdai profile --json | jq '.sessions[] | {startedAt, cost, rediscoveryCost}'
+arricurdai profile --json | jq '.sessions[] | {startedAt, cost, rediscoveryCost, cacheRebuilds}'
+arricurdai profile --json | jq '.breakdown.groups[] | {label, share}'
 ```
 
 The schema of the report is `reportSchema` in `@arricurdai/core`.

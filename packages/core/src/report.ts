@@ -26,6 +26,8 @@ export const sessionReportSchema = z.object({
   /** Rent of all the memory loaded in the session, at start or on demand. */
   memoryCost: amount,
   compactions: count,
+  /** Calls that wrote the previous context to the cache again instead of reading it. */
+  cacheRebuilds: count,
 });
 
 export const rediscoveryReportSchema = z.object({
@@ -58,6 +60,31 @@ export const memoryLineReportSchema = z.object({
   line: z.number().int().min(1),
   text: z.string(),
   terms: z.array(z.string()),
+});
+
+export const costGroupSchema = z.object({
+  /** `tool:Bash`, `memory`, `prefix`, `output`, … */
+  group: z.string(),
+  label: z.string(),
+  /** Tokens these blocks took in the context, calibrated on the measured growth. */
+  tokens: amount,
+  cost: amount,
+  /** Share of the total cost of the window. */
+  share,
+});
+
+export const costBlockSchema = z.object({
+  sessionId: z.string(),
+  group: z.string(),
+  label: z.string(),
+  tokens: amount,
+  /** The API call where the block entered the context. */
+  turn: count,
+  /** Calls that read it again before it left the context. */
+  turnsKept: count,
+  cost: amount,
+  /** Share of the cost of its session. */
+  share,
 });
 
 export const reportSchema = z.object({
@@ -100,6 +127,15 @@ export const reportSchema = z.object({
     unverifiableLines: z.array(memoryLineReportSchema),
     usedLines: count,
   }),
+  /** Where the cost goes: the blocks of context that carry it, by group and one by one. */
+  breakdown: z.object({
+    groups: z.array(costGroupSchema),
+    /** The most costly blocks of the window. */
+    topBlocks: z.array(costBlockSchema),
+    /** Share of the measured cost that the breakdown explains. */
+    explained: share,
+    cacheRebuilds: count,
+  }),
   /** What makes some numbers approximate, in plain words. */
   approximations: z.array(z.string()),
   lines: z.object({
@@ -116,3 +152,5 @@ export type SessionReport = z.infer<typeof sessionReportSchema>;
 export type RediscoveryReport = z.infer<typeof rediscoveryReportSchema>;
 export type MemoryFileReport = z.infer<typeof memoryFileReportSchema>;
 export type MemoryLineReport = z.infer<typeof memoryLineReportSchema>;
+export type CostGroupReport = z.infer<typeof costGroupSchema>;
+export type CostBlockReport = z.infer<typeof costBlockSchema>;

@@ -1,3 +1,4 @@
+export { contextBreakdown, groupLabel, sessionBreakdown, type Breakdown, type CostItem } from './breakdown';
 export { ConfigError, costParamsSchema, DEFAULT_COST_PARAMS, parseCostParams, type CostParams } from './config';
 export {
   loadNowThreshold,
@@ -26,11 +27,15 @@ export {
 export { DEFAULT_SESSION_WINDOW, profile, type DiskMemoryFile, type ProfileOptions } from './profile';
 export { judgeReads, turnsInContext, type ChangeOracle, type ReadVerdict } from './rediscovery';
 export {
+  costBlockSchema,
+  costGroupSchema,
   memoryFileReportSchema,
   memoryLineReportSchema,
   rediscoveryReportSchema,
   reportSchema,
   sessionReportSchema,
+  type CostBlockReport,
+  type CostGroupReport,
   type MemoryFileReport,
   type MemoryLineReport,
   type RediscoveryReport,
@@ -38,10 +43,12 @@ export {
   type SessionReport,
 } from './report';
 export type {
+  BlockKind,
   LineStatsInput,
   ProfileInput,
   ProfileSession,
   ReadKind,
+  SessionBlock,
   SessionChange,
   SessionContext,
   SessionMemory,

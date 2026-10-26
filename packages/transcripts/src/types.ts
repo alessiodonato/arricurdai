@@ -1,6 +1,7 @@
 import type {
   CacheTtl,
   ProfileSession,
+  SessionBlock,
   SessionChange,
   SessionContext,
   SessionMemory,
@@ -71,6 +72,8 @@ export interface Context extends SessionContext {
   compactions: number[];
   reads: ContextRead[];
   memory: MemoryLoad[];
+  /** Every block that entered the context, in order, for the cost breakdown. */
+  blocks: SessionBlock[];
   /** The cache TTL that most of this context's writes used. `5m` when the transcript does not say. */
   cacheTtl: CacheTtl;
 }

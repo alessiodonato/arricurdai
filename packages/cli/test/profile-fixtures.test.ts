@@ -72,6 +72,16 @@ describe('profile of the acme-shop fixtures', () => {
     expect(report.memory.usedLines).toBe(6);
   });
 
+  test('breaks the whole cost down into groups that add up to it', () => {
+    const { groups, topBlocks, explained } = report.breakdown;
+    expect(groups.reduce((total, group) => total + group.cost, 0)).toBeCloseTo(167185, 6);
+    expect(explained).toBeGreaterThan(0);
+    expect(explained).toBeLessThanOrEqual(1);
+    expect(topBlocks.length).toBeLessThanOrEqual(10);
+    // Output is priced at mu = 5: 5 · (1240 + 1310 + 290 + 1000)
+    expect(groups.find((group) => group.group === 'output')?.cost).toBeCloseTo(19200, 9);
+  });
+
   test('counts the broken lines of session C', () => {
     expect(report.lines).toEqual({ total: 109, malformed: 3, unknownTypes: { 'future-feature': 1 }, invalid: { assistant: 1 }, orphanResults: 0 });
   });

@@ -152,6 +152,13 @@ Usage is in `message.usage` on `assistant` lines:
 - **Compaction.** The compaction call writes no `assistant` line. Its usage shows up only in `cost-state`, as the difference between those totals and the sum of the `assistant` lines. In the lab session it was 2,096 input, 278 cache-write, 17,278 cache-read and 1,734 output tokens.
 - **Subagents.** A subagent's usage is only in its own file. The parent's `cost-state` includes it.
 
+### Thinking, images and synthetic replies
+
+- **Thinking.** `thinking` blocks keep their `signature`, but usually not their text. The usage still says how long the thinking was, in `output_tokens_details.thinking_tokens`. Thinking stays in the context of later calls, which shows in how much each request grows.
+- **Images.** Tool results and prompts can carry `{type: "image", source: {type: "base64", media_type, data}}`, such as browser screenshots. An image costs about width × height / 750 tokens, after Claude scales it to at most 1568 pixels on its long side.
+- **Synthetic replies.** `assistant` lines with `message.model: "<synthetic>"` and a usage of zero are written after an error or an interruption. They are not API calls.
+- **Size of a request.** It is `input_tokens + cache_creation_input_tokens + cache_read_input_tokens`. It drops at a compaction, and at a rewind, where the conversation goes on from an earlier message. Lines are chained by `parentUuid`, so a rewind starts a new branch, and consecutive calls in the file can belong to different branches.
+
 ### Timestamps and session
 
 `timestamp` is on every conversation line and on `queue-operation`. `sessionId` is on every line.

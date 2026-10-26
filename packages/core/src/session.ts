@@ -32,6 +32,24 @@ export interface SessionMemory {
   turn: number | undefined;
 }
 
+/** What a block of context is, for the cost breakdown. */
+export type BlockKind = 'prompt' | 'reply' | 'thinking' | 'tool' | 'memory' | 'injected' | 'summary';
+
+/** A block that entered the context: a reply, a tool result, a prompt, memory, or text Claude Code added. */
+export interface SessionBlock {
+  kind: BlockKind;
+  /** Finer grouping: the tool family for tool results (`Read`, `Bash`, …), the attachment type for injected text. */
+  group: string;
+  /** Short description, such as `Read src/app.ts` or `Bash: npm test`. Never the content itself. */
+  label: string;
+  /** Estimated tokens of its text (characters / 4). The cost breakdown calibrates them on the measured growth. */
+  tokens: number;
+  /** Tokens known without estimating the text: thinking from the usage, images from their size. Not calibrated. */
+  fixedTokens?: number;
+  /** The API call where it entered the context. */
+  turn: number | undefined;
+}
+
 export interface SessionContext {
   kind: 'main' | 'subagent';
   calls: readonly { usage: Usage }[];
@@ -39,6 +57,8 @@ export interface SessionContext {
   compactions: readonly number[];
   reads: readonly SessionRead[];
   memory: readonly SessionMemory[];
+  /** Every block that entered the context, in order. */
+  blocks: readonly SessionBlock[];
   cacheTtl: CacheTtl;
 }
 

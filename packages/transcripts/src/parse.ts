@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto';
 import { createReadStream, readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
-import { estimateTokens, sumUsage, type Usage } from '@arricurdai/core';
+import { estimateTokens, type SessionBlock, sumUsage, type Usage } from '@arricurdai/core';
 import { z } from 'zod';
+import { toolGroup, toolLabel } from './blocks';
+import { imagesTokens } from './images';
 import { listSessionFiles, type SessionFiles } from './locate';
-import { classifyToolCall, readKey } from './reads';
+import { classifyToolCall, readKey, relativeToRoot } from './reads';
 import type { Context, FileChange, LineStats, ParsedProject, ParsedSession } from './types';
 
 // ---------------------------------------------------------------- line schemas
@@ -21,6 +23,7 @@ const usageSchema = z.object({
       ephemeral_1h_input_tokens: z.number().nullish(),
     })
     .nullish(),
+  output_tokens_details: z.object({ thinking_tokens: z.number().nullish() }).nullish(),
 });
 
 const lineFields = {
@@ -49,9 +52,16 @@ const userLine = z.object({
   ...lineFields,
   message: z.object({ content: z.union([z.string(), z.array(z.unknown())]) }),
   toolUseResult: z.unknown().optional(),
+  isMeta: z.boolean().optional(),
+  isCompactSummary: z.boolean().optional(),
+  origin: z.object({ kind: z.string().optional() }).optional(),
 });
 
-const attachmentLine = z.object({ ...lineFields, attachment: z.object({ type: z.string() }) });
+const attachmentLine = z.object({
+  ...lineFields,
+  attachment: z.object({ type: z.string() }),
+  rendered: z.array(z.object({ content: z.string() })).optional(),
+});
 const memoryFile = z.object({ path: z.string(), type: z.string(), content: z.string() });
 const instructionsAttachment = z.object({ files: z.array(memoryFile) });
 const nestedMemoryAttachment = z.object({ content: memoryFile });
@@ -159,16 +169,19 @@ interface ContextState {
   context: Context;
   callIndexById: Map<string, number>;
   pending: Map<string, PendingTool>;
+  /** The reply of each call, which enters the context at the next call. */
+  replies: Map<number, SessionBlock>;
 }
 
 function newContext(kind: Context['kind'], agentId?: string): ContextState {
   return {
     context: {
       kind, agentId, agentType: undefined, parentToolUseId: undefined,
-      calls: [], compactions: [], reads: [], memory: [], cacheTtl: '5m',
+      calls: [], compactions: [], reads: [], memory: [], blocks: [], cacheTtl: '5m',
     },
     callIndexById: new Map(),
     pending: new Map(),
+    replies: new Map(),
   };
 }
 
@@ -261,24 +274,47 @@ class SessionParser {
     const parsed = assistantLine.safeParse(raw);
     if (!parsed.success) return false;
     const line = parsed.data;
+    const usage = line.message.usage;
+    // Claude Code writes `<synthetic>` replies, with no usage, after an error or an interruption: they are not API calls.
+    const empty = usage.input_tokens + usage.output_tokens + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) === 0;
+    if (line.message.model === '<synthetic>' || empty) {
+      this.stats.ignored++;
+      return true;
+    }
     const state = this.enter(line, subagentId);
     const { calls } = state.context;
 
     if (!state.callIndexById.has(line.message.id)) {
       calls.push({ index: calls.length + 1, messageId: line.message.id, timestamp: line.timestamp, model: line.message.model, usage: toUsage(line.message.usage) });
       state.callIndexById.set(line.message.id, calls.length);
+      // The transcript keeps no thinking text, but the usage says how long it was, and it enters the next request.
+      const thinking = usage.output_tokens_details?.thinking_tokens ?? 0;
+      if (thinking > 0) state.context.blocks.push({ kind: 'thinking', group: 'thinking', label: 'Assistant thinking', tokens: 0, fixedTokens: thinking, turn: calls.length + 1 });
     }
+
+    const callIndex = state.callIndexById.get(line.message.id)!;
+    const reply = (tokens: number): void => {
+      let block = state.replies.get(callIndex);
+      if (!block) {
+        block = { kind: 'reply', group: 'reply', label: 'Assistant reply', tokens: 0, turn: callIndex + 1 };
+        state.replies.set(callIndex, block);
+        state.context.blocks.push(block);
+      }
+      block.tokens += tokens;
+    };
 
     const blocks = typeof line.message.content === 'string' ? [{ type: 'text', text: line.message.content }] : line.message.content;
     for (const block of blocks) {
       const text = textBlock.safeParse(block);
       if (text.success) {
         this.agentText.push(text.data.text);
+        reply(estimateTokens(text.data.text));
         continue;
       }
       const tool = toolUseBlock.safeParse(block);
       if (tool.success) {
         const { id, name, input } = tool.data;
+        reply(estimateTokens(name) + estimateTokens(JSON.stringify(input)));
         state.pending.set(id, { name, input, cwd: line.wireIngestContext?.[id]?.cwd ?? line.cwd, timestamp: line.timestamp });
         // Writing a memory file is not using it: keep its path, not the text written into it.
         const target = typeof input.file_path === 'string' ? input.file_path : undefined;
@@ -294,9 +330,28 @@ class SessionParser {
     if (!parsed.success) return false;
     const line = parsed.data;
     const state = this.enter(line, subagentId);
-    if (typeof line.message.content === 'string') return true;
+    const turn = state.context.calls.length + 1;
+    const addBlock = (block: Omit<SessionBlock, 'turn'>): void => {
+      if (block.tokens > 0 || (block.fixedTokens ?? 0) > 0) state.context.blocks.push({ ...block, turn });
+    };
 
+    if (typeof line.message.content === 'string') {
+      const tokens = estimateTokens(line.message.content);
+      if (line.isCompactSummary) addBlock({ kind: 'summary', group: 'summary', label: 'Compaction summary', tokens });
+      else if (line.origin?.kind === 'task-notification') addBlock({ kind: 'tool', group: 'Agent', label: 'Agent: report', tokens });
+      else if (line.isMeta) addBlock({ kind: 'injected', group: 'meta', label: 'Claude Code: meta message', tokens });
+      else addBlock({ kind: 'prompt', group: 'prompt', label: 'Prompt', tokens });
+      return true;
+    }
+
+    const promptImages = imagesTokens(line.message.content);
+    if (promptImages > 0) addBlock({ kind: 'prompt', group: 'prompt', label: 'Prompt image', tokens: 0, fixedTokens: promptImages });
     for (const block of line.message.content) {
+      const prompt = textBlock.safeParse(block);
+      if (prompt.success) {
+        addBlock({ kind: 'prompt', group: 'prompt', label: 'Prompt', tokens: estimateTokens(prompt.data.text) });
+        continue;
+      }
       const result = toolResultBlock.safeParse(block);
       if (!result.success) continue;
       const pending = state.pending.get(result.data.tool_use_id);
@@ -310,9 +365,13 @@ class SessionParser {
       const effects = classifyToolCall(pending.name, pending.input, pending.cwd ?? root, root);
       const isError = result.data.is_error === true;
       const timestamp = line.timestamp ?? pending.timestamp;
+      const text = resultText(result.data.content);
+      addBlock({
+        kind: 'tool', group: toolGroup(pending.name), label: toolLabel(pending.name, pending.input, pending.cwd ?? root, root),
+        tokens: estimateTokens(text), fixedTokens: imagesTokens(result.data.content),
+      });
 
       if (effects.reads.length > 0) {
-        const text = resultText(result.data.content);
         const persisted = text.startsWith('<persisted-output>') || (isRecord(line.toolUseResult) && typeof line.toolUseResult.persistedOutputPath === 'string');
         const tokens = estimateTokens(text) / effects.reads.length;
         const resultHash = hash(text);
@@ -336,17 +395,33 @@ class SessionParser {
     if (subagentId === undefined) this.recordsMemory = true;
     const turn = state.context.calls.length + 1;
 
+    const root = this.root ?? '/';
+    const memoryBlock = (path: string, tokens: number): void => {
+      state.context.blocks.push({ kind: 'memory', group: 'memory', label: relativeToRoot(path, root), tokens, turn });
+    };
+
     if (line.attachment.type === 'instructions') {
       const instructions = instructionsAttachment.safeParse(raw.attachment);
       if (!instructions.success) return false;
       for (const file of instructions.data.files) {
-        state.context.memory.push({ ...file, tokens: estimateTokens(file.content), source: 'instructions', turn, timestamp: line.timestamp });
+        const tokens = estimateTokens(file.content);
+        state.context.memory.push({ ...file, tokens, source: 'instructions', turn, timestamp: line.timestamp });
+        memoryBlock(file.path, tokens);
       }
     } else if (line.attachment.type === 'nested_memory') {
       const nested = nestedMemoryAttachment.safeParse(raw.attachment);
       if (!nested.success) return false;
       const file = nested.data.content;
-      state.context.memory.push({ ...file, tokens: estimateTokens(file.content), source: 'nested', turn, timestamp: line.timestamp });
+      const tokens = estimateTokens(file.content);
+      state.context.memory.push({ ...file, tokens, source: 'nested', turn, timestamp: line.timestamp });
+      memoryBlock(file.path, tokens);
+    } else {
+      // Other attachments reach the model only through their rendered text.
+      const rendered = (line.rendered ?? []).map((part) => part.content).join('\n');
+      const tokens = estimateTokens(rendered);
+      if (tokens > 0) {
+        state.context.blocks.push({ kind: 'injected', group: line.attachment.type, label: `Claude Code: ${line.attachment.type}`, tokens, turn });
+      }
     }
     return true;
   }
