@@ -93,6 +93,7 @@ export function isMemoryFile(path: string): boolean {
 const IGNORED_TYPES = new Set([
   'queue-operation', 'api-request', 'api-request-blob', 'api-request-shape', 'file-history-snapshot',
   'file-history-delta', 'last-prompt', 'ai-title', 'mode', 'permission-mode', 'atis-latch', 'summary', 'custom-title',
+  'bridge-session', 'frame-link', 'artifact-comment-monitor', 'artifact-autoreact-ledger', 'agent-name',
 ]);
 
 // ---------------------------------------------------------------- helpers

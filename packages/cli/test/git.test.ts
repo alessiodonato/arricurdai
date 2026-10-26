@@ -29,6 +29,13 @@ beforeAll(() => {
   git(repo, ['commit', '-q', '-m', 'first'], '2026-09-01T09:00:00Z');
   writeFileSync(join(repo, 'src/a.ts'), 'a2');
   git(repo, ['commit', '-q', '-am', 'change a'], '2026-09-02T12:00:00Z');
+  // Next.js routes put brackets and parentheses in real paths.
+  mkdirSync(join(repo, 'app/[id]'), { recursive: true });
+  mkdirSync(join(repo, 'app/(auth)/login'), { recursive: true });
+  writeFileSync(join(repo, 'app/[id]/page.tsx'), 'p');
+  writeFileSync(join(repo, 'app/(auth)/login/page.tsx'), 'l');
+  git(repo, ['add', '.']);
+  git(repo, ['commit', '-q', '-m', 'routes'], '2026-09-02T13:00:00Z');
 });
 
 afterAll(() => {
@@ -48,6 +55,15 @@ describe('loadGitHistory', () => {
     const history = await loadGitHistory(repo);
     expect(history?.changedBetween('src/*.ts', '2026-09-01T10:00:00Z', '2026-09-03T00:00:00Z')).toBe(true);
     expect(history?.changedBetween('lib/*.ts', '2026-09-01T10:00:00Z', '2026-09-03T00:00:00Z')).toBe(false);
+  });
+
+  test('reads brackets and parentheses in paths literally, as in Next.js routes', async () => {
+    const history = await loadGitHistory(repo);
+    const changed = (path: string) => history?.changedBetween(path, '2026-09-02T12:30:00Z', '2026-09-03T00:00:00Z');
+    expect(changed('app/[id]/page.tsx')).toBe(true);
+    expect(changed('app/(auth)/login/page.tsx')).toBe(true);
+    expect(changed('app/[id]/*.tsx')).toBe(true);
+    expect(changed('app/[other]/page.tsx')).toBe(false);
   });
 
   test('cannot tell for paths outside the project or for bad times', async () => {

@@ -65,7 +65,8 @@ These lines are not part of the chain, and most carry only `sessionId`.
 | `api-request-shape` | System prompt blocks and tool definitions, written whenever they change. |
 | `cost-state` | Running totals per model, in tokens and in USD. These totals include subagents and compaction. |
 | `file-history-snapshot`, `file-history-delta` | Backups of the files edited in the session. |
-| `last-prompt`, `ai-title`, `mode`, `permission-mode`, `atis-latch` | Interface state. |
+| `last-prompt`, `ai-title`, `agent-name`, `mode`, `permission-mode`, `atis-latch` | Interface state. |
+| `bridge-session`, `frame-link`, `artifact-comment-monitor`, `artifact-autoreact-ledger` | State of Remote Control and of artifacts opened in the session. Seen in interactive sessions of 2.1.2xx–2.1.3xx. |
 
 The profiler uses `user`, `assistant`, `attachment`, `system` and `cost-state`. It ignores the other types listed here, and counts and skips any type it does not recognize.
 

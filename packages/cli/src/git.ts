@@ -9,7 +9,9 @@ export interface GitHistory {
   changedBetween(path: string, since: string, until: string): boolean | undefined;
 }
 
-const GLOB = /[*?[]/;
+// Only * and ? are wildcards. Brackets and parentheses are part of real paths, such as
+// app/[id]/page.tsx or app/(auth)/login/page.tsx in a Next.js project.
+const GLOB = /[*?]/;
 
 /** Turns a shell glob into a regular expression over whole paths: `*` stays within a folder, `**` crosses folders. */
 function globToRegExp(glob: string): RegExp {
@@ -21,7 +23,7 @@ function globToRegExp(glob: string): RegExp {
       i++;
     } else if (c === '*') pattern += '[^/]*';
     else if (c === '?') pattern += '[^/]';
-    else pattern += c.replace(/[.+^${}()|\\\]]/g, '\\$&');
+    else pattern += c.replace(/[.+^${}()|[\]\\]/g, '\\$&');
   }
   return new RegExp(`^${pattern}$`);
 }
