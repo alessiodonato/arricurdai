@@ -84,6 +84,14 @@ The last part splits the cost of the measured sessions among what made it up, wi
 
 "Known blocks explain …" says how much of the cost the breakdown can attribute. The rest is growth of the context that the transcript does not record.
 
+### What if
+
+In long sessions the report adds what compacting at other moments would have saved. The figures are ceilings: after a compaction the agent may read files again, which the replay does not count. If they are large:
+
+- **Before a long break,** run `/compact`, or end the session with a short note and start a new one when you are back.
+- **Keep contexts smaller** with a lower auto-compact window. Run `claude --help` and look for `--autocompact`.
+- **Measure again** a couple of weeks later, and compare the two `--json` reports.
+
 ## 5. Options
 
 | Option | Example | When to use it |

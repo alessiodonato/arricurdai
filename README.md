@@ -221,6 +221,20 @@ In sessions this short, most of the cost is output, the commands' results and th
 - thinking stays in the context too;
 - every pause longer than the cache lifetime writes the whole context again, at the price of a cache write.
 
+### What if
+
+When sessions are long, the report replays them with compactions at other moments, to show what the context size costs:
+
+- **Compact before each pause.** Before every cache rebuild, while the cache is still warm. This is what you could do by running `/compact` before a long break.
+- **Compact when coming back from a pause.** At every cache rebuild, reading the cold context at the cache-write price.
+- **Keep the context under 200,000 or 400,000 tokens.** Compact whenever a request would pass that size, as a lower auto-compact window would.
+
+How the replay works:
+
+- **A simulated compaction** keeps the system prompt and a summary as large as the real summaries of the project, or 15,000 tokens if there is none. It costs a read of the context and the writing of the summary.
+- **The calls that follow** bring the same new content as the real ones, with a smaller context.
+- **These are ceilings.** A compaction drops detail the agent may have to read again, and that cost is not counted.
+
 ### What is approximate
 
 - Token counts are estimates: characters / 4, computed in one function (`estimateTokens`) so that a tokenizer can replace it.

@@ -1,4 +1,4 @@
-export { contextBreakdown, groupLabel, sessionBreakdown, type Breakdown, type CostItem } from './breakdown';
+export { contextBreakdown, contextShape, groupLabel, sessionBreakdown, type Breakdown, type ContextShape, type CostItem } from './breakdown';
 export { ConfigError, costParamsSchema, DEFAULT_COST_PARAMS, parseCostParams, type CostParams } from './config';
 export {
   loadNowThreshold,
@@ -26,6 +26,7 @@ export {
 } from './memory';
 export { DEFAULT_SESSION_WINDOW, profile, type DiskMemoryFile, type ProfileOptions } from './profile';
 export { judgeReads, turnsInContext, type ChangeOracle, type ReadVerdict } from './rediscovery';
+export { simulateContext, simulateSession, type CompactionPolicy, type Simulation, type SimulationSizes } from './simulate';
 export {
   costBlockSchema,
   costGroupSchema,

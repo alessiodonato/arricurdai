@@ -82,6 +82,10 @@ describe('profile of the acme-shop fixtures', () => {
     expect(groups.find((group) => group.group === 'output')?.cost).toBeCloseTo(19200, 9);
   });
 
+  test('has no what-if scenario: no pause and no large context in the fixtures', () => {
+    expect(report.whatIf.scenarios).toEqual([]);
+  });
+
   test('counts the broken lines of session C', () => {
     expect(report.lines).toEqual({ total: 109, malformed: 3, unknownTypes: { 'future-feature': 1 }, invalid: { assistant: 1 }, orphanResults: 0 });
   });

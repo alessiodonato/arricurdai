@@ -71,6 +71,26 @@ describe('renderReport', () => {
     expect(text).toMatch(/ 1 {2}Bash: npm run build +12,400 +230 +1,985 +2,400,000\n/);
   });
 
+  test('shows what other compactions would have saved, and when they would cost more', () => {
+    const report = emptyReport();
+    report.whatIf = {
+      summaryTokens: 9945,
+      scenarios: [
+        { policy: 'before-rebuild', saving: 108_006_669, share: 0.676, compactions: 38 },
+        { policy: 'cap', cap: 200_000, saving: -1_200, share: -0.004, compactions: 3 },
+      ],
+    };
+    const text = renderReport(report, { colors: false });
+    expect(text).toContain('What if');
+    expect(text).toMatch(/Compact before each pause \(38 compactions\) +saves 68% +108,006,669\n/);
+    expect(text).toMatch(/Keep the context under 200,000 tokens \(3 compactions\) +costs 0\.40% more +1,200\n/);
+    expect(text).toContain('with summaries of 9,945 tokens');
+  });
+
+  test('says nothing about what-ifs when no scenario applies', () => {
+    expect(renderReport(emptyReport(), { colors: false })).not.toContain('What if');
+  });
+
   test('marks the approximations', () => {
     const report = emptyReport();
     report.approximations = ['The project has no git history.'];

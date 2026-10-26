@@ -136,6 +136,20 @@ export const reportSchema = z.object({
     explained: share,
     cacheRebuilds: count,
   }),
+  /** The same sessions replayed with compactions at other moments. A ceiling: what the agent loses in a compaction is not counted. */
+  whatIf: z.object({
+    /** Size of the summary a simulated compaction writes: the median of the real ones, or a default. */
+    summaryTokens: amount,
+    scenarios: z.array(z.object({
+      /** `before-rebuild`: before every pause; `after-rebuild`: when coming back; `cap`: whenever a request passes `cap` tokens. */
+      policy: z.enum(['before-rebuild', 'after-rebuild', 'cap']),
+      cap: z.number().int().positive().optional(),
+      /** Measured cost minus simulated cost. Negative when the compactions cost more than they save. */
+      saving: z.number(),
+      share: z.number(),
+      compactions: count,
+    })),
+  }),
   /** What makes some numbers approximate, in plain words. */
   approximations: z.array(z.string()),
   lines: z.object({

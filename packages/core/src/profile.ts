@@ -1,5 +1,5 @@
 import { posix } from 'node:path';
-import { type Breakdown, groupLabel, sessionBreakdown } from './breakdown';
+import { type Breakdown, contextBreakdown, groupLabel, sessionBreakdown } from './breakdown';
 import { type CostParams, DEFAULT_COST_PARAMS } from './config';
 import { maxSavings, sumUsage, weightedCost } from './cost';
 import { classifyMemoryLines, type MemoryCost, type MemoryDocument, type MemoryLine, memoryLoadCosts } from './memory';
@@ -13,7 +13,8 @@ import {
   reportSchema,
   type SessionReport,
 } from './report';
-import type { ProfileInput, ProfileSession, SessionMemory } from './session';
+import type { ProfileInput, ProfileSession, SessionContext, SessionMemory } from './session';
+import { type CompactionPolicy, simulateSession } from './simulate';
 import { estimateTokens } from './tokens';
 
 export const DEFAULT_SESSION_WINDOW = 20;
@@ -109,6 +110,52 @@ function measureSession(session: ProfileSession, verdicts: readonly ReadVerdict[
 }
 
 const TOP_BLOCKS = 10;
+/** Context sizes tried as a lower auto-compact window. */
+const CAPS = [200_000, 400_000];
+/** Summary size when the sessions have no real compaction to measure. */
+const DEFAULT_SUMMARY_TOKENS = 15_000;
+
+function median(values: number[]): number | undefined {
+  if (values.length === 0) return undefined;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1]! + sorted[middle]!) / 2;
+}
+
+/** Replays the window with compactions before pauses, after pauses, and under a few context sizes. */
+function whatIf(measures: readonly SessionMeasure[], params: CostParams): Report['whatIf'] {
+  const total = sum(measures.map((measure) => measure.report.cost));
+  const summaries = measures.flatMap((measure) => measure.breakdown.items.filter((item) => item.group === 'summary').map((item) => item.tokens));
+  const summaryTokens = Math.round(median(summaries) ?? DEFAULT_SUMMARY_TOKENS);
+  const prefixes = new Map<SessionContext, number>();
+  const sizes = (context: SessionContext) => {
+    let prefixTokens = prefixes.get(context);
+    if (prefixTokens === undefined) {
+      prefixTokens = contextBreakdown(context, params).items.find((item) => item.group === 'prefix' && item.turn === 1)?.tokens ?? 0;
+      prefixes.set(context, prefixTokens);
+    }
+    return { prefixTokens, summaryTokens };
+  };
+
+  const largest = Math.max(0, ...measures.flatMap(({ session }) =>
+    [session.main, ...session.subagents].flatMap((context) => context.calls.map((call) => call.usage.input + call.usage.cacheWrite + call.usage.cacheRead))));
+  const policies: CompactionPolicy[] = [
+    ...(measures.some((measure) => measure.breakdown.cacheRebuilds > 0) ? [{ kind: 'before-rebuild' as const }, { kind: 'after-rebuild' as const }] : []),
+    ...CAPS.filter((cap) => cap < largest).map((cap) => ({ kind: 'cap' as const, cap })),
+  ];
+
+  const scenarios = policies.map((policy) => {
+    let saving = 0;
+    let compactions = 0;
+    for (const { session } of measures) {
+      const result = simulateSession(session, params, policy, sizes);
+      saving += result.measured - result.simulated;
+      compactions += result.compactions;
+    }
+    return { policy: policy.kind, ...(policy.kind === 'cap' ? { cap: policy.cap } : {}), saving, share: total === 0 ? 0 : saving / total, compactions };
+  });
+  return { summaryTokens, scenarios };
+}
 
 /** Groups the cost items of the window, and picks its most costly blocks. */
 function summarizeBreakdown(measures: readonly SessionMeasure[]): Report['breakdown'] {
@@ -264,6 +311,7 @@ export function profile(input: ProfileInput, options: ProfileOptions): Report {
       usedLines: lines.used.length,
     },
     breakdown: summarizeBreakdown(measures),
+    whatIf: whatIf(measures, params),
     approximations,
     lines: {
       total: input.stats.lines,

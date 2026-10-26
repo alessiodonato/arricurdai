@@ -63,11 +63,54 @@ function median(values: number[]): number | undefined {
 }
 
 /** Price of the part of a request that was not read from the cache: input, and cache writes at their TTL. */
-function writtenCost(usage: SessionContext['calls'][number]['usage'], params: CostParams): number {
+export function writtenCost(usage: SessionContext['calls'][number]['usage'], params: CostParams): number {
   const write5m = usage.cacheWrite5m ?? 0;
   const write1h = usage.cacheWrite1h ?? 0;
   const unsplit = Math.max(0, usage.cacheWrite - write5m - write1h);
   return usage.input + params.w * (write5m + unsplit) + params.w1h * write1h;
+}
+
+/** Request sizes, stretches of context and cache rebuilds of a context, as its usage shows them. */
+export interface ContextShape {
+  turns: number;
+  /** Tokens of the request of a call: input + cache writes + cache reads. */
+  size(turn: number): number;
+  /** The call opens a stretch of context: the first call, or the first after a compaction or a large drop in size. */
+  startsSegment(turn: number): boolean;
+  /** The last call of the stretch of context that holds `turn`. */
+  segmentEnd(turn: number): number;
+  /** Tokens of the previous request that this call wrote to the cache again instead of reading them; 0 when it is no rebuild. */
+  rebuilt(turn: number): number;
+}
+
+export function contextShape(context: SessionContext): ContextShape {
+  const calls = context.calls;
+  const turns = calls.length;
+  const size = (turn: number): number => {
+    const usage = calls[turn - 1]!.usage;
+    return usage.input + usage.cacheWrite + usage.cacheRead;
+  };
+  // A stretch of context ends at a compaction, or where the request shrinks a lot, as after a rewind.
+  const starts = new Set<number>([1]);
+  for (let turn = 2; turn <= turns; turn++) {
+    const drop = size(turn - 1) - size(turn);
+    if (context.compactions.includes(turn - 1) || (drop > DROP_TOKENS && drop > DROP_SHARE * size(turn - 1))) starts.add(turn);
+  }
+  return {
+    turns,
+    size,
+    startsSegment: (turn) => starts.has(turn),
+    segmentEnd: (turn) => {
+      let end = turn;
+      while (end < turns && !starts.has(end + 1)) end++;
+      return end;
+    },
+    rebuilt: (turn) => {
+      if (starts.has(turn)) return 0;
+      const missed = size(turn - 1) - calls[turn - 1]!.usage.cacheRead;
+      return missed > REBUILD_TOKENS && missed > 0.2 * size(turn - 1) ? missed : 0;
+    },
+  };
 }
 
 interface Placed {
@@ -99,19 +142,8 @@ export function contextBreakdown(context: SessionContext, params: CostParams): B
   if (turns === 0) return { items: [], measured: 0, cacheRebuilds: 0 };
 
   const usage = (turn: number): SessionContext['calls'][number]['usage'] => calls[turn - 1]!.usage;
-  const size = (turn: number): number => usage(turn).input + usage(turn).cacheWrite + usage(turn).cacheRead;
-  // A stretch of context ends at a compaction, or where the request shrinks a lot, as after a rewind.
-  const starts = new Set<number>([1]);
-  for (let turn = 2; turn <= turns; turn++) {
-    const drop = size(turn - 1) - size(turn);
-    if (context.compactions.includes(turn - 1) || (drop > DROP_TOKENS && drop > DROP_SHARE * size(turn - 1))) starts.add(turn);
-  }
-  const startsSegment = (turn: number): boolean => starts.has(turn);
-  const segmentEnd = (turn: number): number => {
-    let end = turn;
-    while (end < turns && !starts.has(end + 1)) end++;
-    return end;
-  };
+  const shape = contextShape(context);
+  const { size, startsSegment, segmentEnd } = shape;
 
   const byTurn = new Map<number, SessionBlock[]>();
   for (const block of context.blocks) {
@@ -182,8 +214,8 @@ export function contextBreakdown(context: SessionContext, params: CostParams): B
         reads -= params.r * cached;
       }
     } else {
-      const missed = size(turn - 1) - u.cacheRead;
-      if (missed > REBUILD_TOKENS && missed > 0.2 * size(turn - 1)) {
+      const missed = shape.rebuilt(turn);
+      if (missed > 0) {
         cacheRebuilds++;
         const notCached = u.input + u.cacheWrite;
         const rebuild = notCached === 0 ? 0 : Math.min(writes, (writes / notCached) * missed);

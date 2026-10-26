@@ -121,10 +121,32 @@ export function renderReport(report: Report, options: RenderOptions): string {
   // 4. Where the cost goes
   out.push(c.bold('Where the cost goes'));
   const { breakdown } = report;
-  if (breakdown.groups.length === 0) {
-    out.push(`  ${c.dim('No cost to break down.')}`);
-    return `${out.join('\n')}\n`;
+  if (breakdown.groups.length === 0) out.push(`  ${c.dim('No cost to break down.')}`);
+  else renderBreakdown(report, out, c);
+
+  // 5. What if
+  const { whatIf } = report;
+  if (whatIf.scenarios.length > 0) {
+    out.push('');
+    out.push(c.bold('What if'));
+    for (const scenario of whatIf.scenarios) {
+      const what =
+        scenario.policy === 'before-rebuild' ? `Compact before each pause (${scenario.compactions} compactions)`
+        : scenario.policy === 'after-rebuild' ? `Compact when coming back from a pause (${scenario.compactions})`
+        : `Keep the context under ${formatInteger(scenario.cap ?? 0)} tokens (${scenario.compactions} compactions)`;
+      const effect = scenario.saving >= 0
+        ? `saves ${formatPercent(scenario.share)}`
+        : `costs ${formatPercent(-scenario.share)} more`;
+      out.push(`  ${truncate(what, 60).padEnd(60)}${effect.padStart(16)}${formatInteger(Math.abs(scenario.saving)).padStart(14)}`);
+    }
+    out.push(`  ${c.dim(`Replayed on the same sessions, with summaries of ${formatInteger(whatIf.summaryTokens)} tokens. A compaction drops detail the agent may have to read again, which is not counted: these are ceilings.`)}`);
   }
+  return `${out.join('\n')}\n`;
+}
+
+/** The groups of the cost and the costliest blocks, the fourth part of the report. */
+function renderBreakdown(report: Report, out: string[], c: ReturnType<typeof createColors>): void {
+  const { breakdown } = report;
   out.push(c.dim(`  ${'What'.padEnd(48)}${'Tokens'.padStart(12)}${'Cost'.padStart(14)}${'Share'.padStart(8)}`));
   const shown = breakdown.groups.filter((group) => group.share >= MIN_GROUP_SHARE);
   for (const group of shown) {
@@ -144,7 +166,6 @@ export function renderReport(report: Report, options: RenderOptions): string {
     });
     out.push(`  ${c.dim('Turn: the API call where the block entered the context. Kept: the calls that read it again.')}`);
   }
-  return `${out.join('\n')}\n`;
 }
 
 /** Groups below this share of the cost are left to the JSON report. */
