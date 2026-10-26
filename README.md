@@ -16,6 +16,8 @@ node packages/cli/dist/bin.js profile --project /path/to/your/project
 
 Once it is published, this will become `npx arricurdai profile --project .`.
 
+**New here? Read the [guide](docs/guide.md).** It walks through building the profiler, running it on your project, reading each part of the report, and what to do with what it finds.
+
 ## Usage
 
 ```

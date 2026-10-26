@@ -163,6 +163,7 @@
   .sample-banner { background: var(--saffron-soft); border: 1px solid var(--saffron); border-radius: 6px; padding: 10px 14px; font-weight: 700; margin-bottom: 20px; }
   .headline { font: 700 clamp(1.75rem, 4vw, 2.75rem)/1.1 var(--display); letter-spacing: -0.02em; margin: 0 0 8px; }
   .link-button { font: inherit; font-weight: 700; color: var(--cobalt); background: none; border: 2px solid var(--cobalt); border-radius: 6px; padding: 10px 16px; cursor: pointer; }
+  #baseline .method { margin-top: 28px; }
 
   /* Tables */
   .table-wrap { overflow-x: auto; }
@@ -192,6 +193,7 @@
         <li><a href="#threshold">Load now or later</a></li>
         <li><a href="#how">How it works</a></li>
         <li><a href="#benchmark">Benchmark</a></li>
+        <li><a href="#baseline">Baseline</a></li>
         <li><a href="#start">Get started</a></li>
         <li><a data-repo="" href="#">GitHub</a></li>
       </ul>
@@ -373,6 +375,31 @@
     </div>
   </section>
 
+  <section class="block" id="baseline" aria-labelledby="baseline-title">
+    <div class="wrap">
+      <h2 id="baseline-title">What three public repositories spend today</h2>
+      <p class="lead">Before arricurdAI changes anything, its profiler measures what Claude Code spends now. We ran five scripted sessions on one area of each repository, coming back to it the way a developer does over several days, and profiled them.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th scope="col">Repository</th><th scope="col">Area</th><th scope="col" class="num">Mean cost K</th><th scope="col" class="num">Read from cache</th><th scope="col" class="num">Rediscovery</th><th scope="col" class="num">S<sub>max</sub></th><th scope="col" class="num">Memory share</th><th scope="col" class="num">Memory lines never used</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><a href="https://github.com/vitejs/vite">vitejs/vite</a><br><span class="small">TypeScript</span></td><td>Hot module replacement</td><td class="num">58,012</td><td class="num">85%</td><td class="num">5.8%</td><td class="num">1.2%</td><td class="num">3.4%</td><td class="num">20 of 34</td></tr>
+            <tr><td><a href="https://github.com/fastapi/fastapi">fastapi/fastapi</a><br><span class="small">Python</span></td><td>Dependency injection</td><td class="num">53,422</td><td class="num">86%</td><td class="num">5.7%</td><td class="num">0.95%</td><td class="num">3.5%</td><td class="num">14 of 23</td></tr>
+            <tr><td><a href="https://github.com/gin-gonic/gin">gin-gonic/gin</a><br><span class="small">Go</span></td><td>Routing</td><td class="num">43,754</td><td class="num">86%</td><td class="num">4.1%</td><td class="num">0.51%</td><td class="num">4.5%</td><td class="num">15 of 23</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul class="method">
+        <li><strong>Rediscovery is small in short sessions on one area.</strong> Between 4% and 6% of the tokens read as context were already known from an earlier session. S<sub>max</sub>, the ceiling on what avoiding them could save, stays at or under 1.2% of the cost.</li>
+        <li><strong>The memory costs more.</strong> CLAUDE.md takes between 3.4% and 4.5% of the cost of every session, and more than half of its lines with something to check were never used: build, lint and test commands these sessions never ran, and parts of the code they never touched.</li>
+        <li><strong>So the larger lever is choosing which memory enters the context</strong>, which is what arricurdAI does next.</li>
+      </ul>
+      <p class="note">These numbers measure today's spend, not savings: arricurdAI changed nothing in these sessions. The sessions are five per repository, scripted, run with Claude Code 2.1.310 on Sonnet with the CLAUDE.md that /init wrote, on 26 October 2026. Mean cost K is in price-weighted tokens per session. Five sessions are an example, not a statistic. The prompts and the script are in the <a data-repo="/tree/main/showcase" href="#">showcase folder</a>, so anyone can run them again.</p>
+    </div>
+  </section>
+
   <section class="block" id="start" aria-labelledby="start-title">
     <div class="wrap">
       <h2 id="start-title">Start by measuring</h2>
@@ -381,11 +408,11 @@
         <div>
           <h3>See what you pay today</h3>
           <pre><code>npx arricurdai profile --project .</code></pre>
-          <p class="small">Arrives with v0.1. Watch the <a data-repo="" href="#">repository</a> to know when it ships.</p>
+          <p class="small">The npm package arrives with v0.1. Until then, build it from the <a data-repo="" href="#">repository</a>; the <a data-repo="/blob/main/docs/guide.md" href="#">guide</a> takes two minutes.</p>
         </div>
         <div>
           <h3>Then let it choose</h3>
-          <pre><code>/plugin marketplace add YOUR-USER/arricurdai
+          <pre><code>/plugin marketplace add alessiodonato/arricurdai
 /plugin install arricurdai</code></pre>
           <p class="small">The Claude Code plugin is planned for v0.2.</p>
         </div>
@@ -404,7 +431,7 @@
 <script>
 (() => {
   // Edit this once the repository exists.
-  const REPO_URL = 'https://github.com/YOUR-USER/arricurdai';
+  const REPO_URL = 'https://github.com/alessiodonato/arricurdai';
 
   // Anthropic prompt-cache multipliers and round-trip overhead used in every calculation.
   const W = 1.25, R = 0.1, O = 300;
