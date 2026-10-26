@@ -46,7 +46,7 @@ The report has three parts.
 | Line | What it means |
 | --- | --- |
 | Sessions analyzed | How many sessions were measured, and the dates of the first and the last. |
-| Mean cost K | The average cost of a session in price-weighted tokens. Every token counts at its own price, relative to an input token: cache writes 1.25× or 2×, cache reads 0.1×, output 5×. To get money, multiply by your model's price per input token. At 3 USD per million input tokens, a K of 55,728 is about 0.17 USD. |
+| Mean cost K | The average cost of a session in price-weighted tokens. Every token counts at its own price, relative to an input token: cache writes 1.25× or 2×, cache reads 0.05× (Claude 5 models), output 5×. To get money, multiply by your model's price per input token. At 2 USD per million input tokens (Sonnet 5.5), a K of 55,728 is about 0.11 USD. |
 | Read from cache | The share of input tokens served from the prompt cache. A high share is normal and cheap. |
 | Rediscovery | The share of the tokens read as context (files, searches, listings) that the agent had already read in an earlier session, with nothing changed since. |
 | S_max | What that rediscovery cost, as a share of all the spend. A memory that removes it would save at most this much. It is a ceiling, not a promise. |
@@ -115,7 +115,7 @@ The schema of the report is `reportSchema` in `@arricurdai/core`.
 The price weights live in `arricurdai.config.json`, in the project or wherever `--config` points. Every field is optional:
 
 ```json
-{ "w": 1.25, "w1h": 2, "r": 0.1, "mu": 5, "overhead": 300 }
+{ "w": 1.25, "w1h": 2, "r": 0.05, "mu": 5, "overhead": 300 }
 ```
 
 ## 6. Tips

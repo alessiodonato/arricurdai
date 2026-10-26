@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'vitest';
+import { SPEC_PARAMS } from './spec-params';
 import { profile, reportSchema, type ProfileInput, type ProfileSession } from '../src/index';
 import { call, calls, context, read, session } from './helpers';
 
 const stats = { lines: 10, empty: 1, malformedJson: 2, notObject: 1, ignored: 3, unknownTypes: { future: 1 }, invalid: { user: 1 }, orphanResults: 0 };
 const input = (sessions: ProfileSession[], duplicateCalls = 0): ProfileInput => ({ dir: '/t', sessions, stats, duplicateCalls });
-const options = { projectRoot: '/repo', generatedAt: '2026-10-26T00:00:00.000Z' };
+const options = { projectRoot: '/repo', generatedAt: '2026-10-26T00:00:00.000Z', params: SPEC_PARAMS };
 
 // Two sessions of 10 calls: the second reads src/a.ts again, unchanged.
 const oneCall = call({ input: 1000, cacheWrite: 1000, cacheWrite1h: 1000, cacheRead: 8000, output: 100 });

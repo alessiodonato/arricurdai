@@ -1,0 +1,1 @@
+Document MethodAllowList and ListRoutes in README.md, in the style of the existing sections. Then run `go vet ./...` and `go test ./...` and fix anything they report.

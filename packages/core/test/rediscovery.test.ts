@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'vitest';
-import { DEFAULT_COST_PARAMS, judgeReads, turnsInContext } from '../src/index';
+import { SPEC_PARAMS } from './spec-params';
+import { judgeReads, turnsInContext } from '../src/index';
 import { calls, context, read, session } from './helpers';
 
-const params = DEFAULT_COST_PARAMS;
+const params = SPEC_PARAMS;
 const DAY1 = '2026-09-01T10:00:00.000Z';
 const DAY2 = '2026-09-02T10:00:00.000Z';
 

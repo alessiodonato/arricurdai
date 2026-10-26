@@ -1,4 +1,4 @@
-import { profile, reportSchema, type Report } from '@arricurdai/core';
+import { profile, reportSchema, type Report, parseCostParams } from '@arricurdai/core';
 import { parseProject } from '@arricurdai/transcripts';
 import { beforeAll, describe, expect, test } from 'vitest';
 
@@ -11,7 +11,7 @@ let report: Report;
 
 beforeAll(async () => {
   const project = await parseProject(TRANSCRIPTS);
-  report = profile(project, { projectRoot: '/home/dev/acme-shop', generatedAt: '2026-10-26T00:00:00.000Z', changedBetween: () => false });
+  report = profile(project, { projectRoot: '/home/dev/acme-shop', generatedAt: '2026-10-26T00:00:00.000Z', params: parseCostParams({ r: 0.1 }), changedBetween: () => false });
 });
 
 describe('profile of the acme-shop fixtures', () => {

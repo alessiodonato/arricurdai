@@ -116,3 +116,5 @@ Expected use of each line over the three sessions. Headings and blank lines are 
 | empty line | skipped |
 | `{"type":"future-feature",…}` | unknown type |
 | `{"type":"assistant",…,"content":"missing id and usage"}` | known type, invalid fields |
+
+The expected values use the parameters of the specification, with `r` = 0.1: the tests read them from [`spec.config.json`](spec.config.json).

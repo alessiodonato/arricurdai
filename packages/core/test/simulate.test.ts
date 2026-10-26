@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'vitest';
-import { DEFAULT_COST_PARAMS, simulateContext, simulateSession, type Usage } from '../src/index';
+import { SPEC_PARAMS } from './spec-params';
+import { simulateContext, simulateSession, type Usage } from '../src/index';
 import { context, session } from './helpers';
 
-const params = DEFAULT_COST_PARAMS; // w1h = 2, r = 0.1, mu = 5
+const params = SPEC_PARAMS; // w1h = 2, r = 0.1, mu = 5
 const call = (cacheWrite: number, cacheRead: number): { usage: Usage } => ({
   usage: { input: 0, cacheWrite, cacheWrite5m: 0, cacheWrite1h: cacheWrite, cacheRead, output: 0 },
 });

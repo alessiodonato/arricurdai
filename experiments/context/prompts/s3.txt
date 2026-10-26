@@ -1,0 +1,1 @@
+Add an exported function `ListRoutes(r Routes) []string` in a new file routes_list.go in package chi. It returns one string per method and route, formatted as "METHOD /pattern" (for example "GET /api/users/{id}"), sorted alphabetically, built with chi.Walk. Add tests in routes_list_test.go and run `go test ./...` until everything passes.

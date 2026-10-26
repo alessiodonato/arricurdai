@@ -2,6 +2,7 @@
 import { createRequire } from 'node:module';
 import { Command } from 'commander';
 import pc from 'picocolors';
+import { DEFAULT_MIN_TOKENS, DEFAULT_STATE_DIR, type HookIO, runGuard, runHandoff } from './guard';
 import { type ProfileCommandOptions, runProfile } from './run-profile';
 
 const { version } = createRequire(import.meta.url)('../package.json') as { version: string };
@@ -27,6 +28,29 @@ program
       now: () => new Date(),
       colors: pc.isColorSupported,
     });
+  });
+
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+const hookIO = (): HookIO => ({ stdout: (text) => process.stdout.write(text), now: () => new Date(), stateDir: DEFAULT_STATE_DIR });
+
+program
+  .command('guard')
+  .description('Claude Code UserPromptSubmit hook: stops the first prompt after the prompt cache of a large session expired.')
+  .option('--min-tokens <n>', 'smallest context worth stopping for', String(DEFAULT_MIN_TOKENS))
+  .action(async (options: { minTokens?: string }) => {
+    process.exitCode = runGuard(await readStdin(), options, hookIO());
+  });
+
+program
+  .command('handoff')
+  .description('Claude Code SessionStart hook: after /clear, gives the new session a note on the one the guard stopped.')
+  .action(async () => {
+    process.exitCode = runHandoff(await readStdin(), hookIO());
   });
 
 await program.parseAsync();

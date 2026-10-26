@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { estimateTokens, sessionCost } from '@arricurdai/core';
+import { estimateTokens, parseCostParams, sessionCost } from '@arricurdai/core';
 import { beforeAll, describe, expect, test } from 'vitest';
 import { parseProject, type ParsedProject, type ParsedSession } from '../src/index';
 
@@ -41,7 +41,7 @@ describe('API calls and usage', () => {
     expect(a.costState).toEqual({ input: 9, cacheWrite: 16800, cacheRead: 87300, output: 1240 });
     expect(a.unrecordedUsage).toEqual({ input: 0, cacheWrite: 0, cacheRead: 0, output: 0 });
     // in 9, cw1h 16800, cr 87300, out 1240: 9 + 2 · 16800 + 0.1 · 87300 + 5 · 1240
-    expect(sessionCost(a.main.calls.map((call) => call.usage))).toBeCloseTo(48539, 9);
+    expect(sessionCost(a.main.calls.map((call) => call.usage), parseCostParams({ r: 0.1 }))).toBeCloseTo(48539, 9);
   });
 
   test('keep the TTL of each cache write', () => {

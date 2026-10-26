@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { classifyMemoryLines, DEFAULT_COST_PARAMS, extractTerms, memoryLines, memoryLoadCosts } from '../src/index';
+import { SPEC_PARAMS } from './spec-params';
+import { classifyMemoryLines, extractTerms, memoryLines, memoryLoadCosts } from '../src/index';
 import { calls, context, read, session } from './helpers';
 
 describe('extractTerms', () => {
@@ -89,16 +90,16 @@ describe('memoryLoadCosts', () => {
   test('memory loaded at the start pays c·(w + r·(T − 1)), once per file', () => {
     const ctx = context({ calls: calls(30), cacheTtl: '5m', memory: [load('/a/CLAUDE.md', 'instructions', 1, 1000), load('/a/CLAUDE.md', 'instructions', 12, 1000)] });
     // 1000 · (1.25 + 0.1 · 29)
-    expect(memoryLoadCosts(ctx, DEFAULT_COST_PARAMS)).toEqual([{ path: '/a/CLAUDE.md', type: 'Project', source: 'instructions', tokens: 1000, cost: expect.closeTo(4150, 9) }]);
+    expect(memoryLoadCosts(ctx, SPEC_PARAMS)).toEqual([{ path: '/a/CLAUDE.md', type: 'Project', source: 'instructions', tokens: 1000, cost: expect.closeTo(4150, 9) }]);
   });
 
   test('memory loaded on demand pays rent from its turn to the end of its context', () => {
     const ctx = context({ calls: calls(10), compactions: [8], memory: [load('/a/src/CLAUDE.md', 'nested', 4)] });
     // 100 · (2 + 0.1 · (8 − 4))
-    expect(memoryLoadCosts(ctx, DEFAULT_COST_PARAMS)[0]?.cost).toBeCloseTo(240, 9);
+    expect(memoryLoadCosts(ctx, SPEC_PARAMS)[0]?.cost).toBeCloseTo(240, 9);
   });
 
   test('a context with no calls pays nothing', () => {
-    expect(memoryLoadCosts(context({ calls: [], memory: [load('/a/CLAUDE.md', 'instructions', 1)] }), DEFAULT_COST_PARAMS)).toEqual([]);
+    expect(memoryLoadCosts(context({ calls: [], memory: [load('/a/CLAUDE.md', 'instructions', 1)] }), SPEC_PARAMS)).toEqual([]);
   });
 });

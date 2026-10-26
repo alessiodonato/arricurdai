@@ -9,8 +9,8 @@ export const costParamsSchema = z.strictObject({
   w: z.number().nonnegative().default(1.25),
   /** Multiplier for writing a token to the 1-hour prompt cache. Claude Code main sessions use it. */
   w1h: z.number().nonnegative().default(2),
-  /** Multiplier for reading a token from the prompt cache. */
-  r: z.number().nonnegative().default(0.1),
+  /** Multiplier for reading a token from the prompt cache: 0.05 for Claude 5 models, 0.1 for older ones. */
+  r: z.number().nonnegative().default(0.05),
   /** Ratio between the output price and the input price. */
   mu: z.number().nonnegative().default(5),
   /** Tokens of one extra round trip: tool call, tool result and reply. */

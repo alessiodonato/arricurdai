@@ -3,7 +3,7 @@ import { ConfigError, DEFAULT_COST_PARAMS, parseCostParams } from '../src/index'
 
 describe('parseCostParams', () => {
   test('gives the defaults when there is no config', () => {
-    expect(parseCostParams(undefined)).toEqual({ w: 1.25, w1h: 2, r: 0.1, mu: 5, overhead: 300 });
+    expect(parseCostParams(undefined)).toEqual({ w: 1.25, w1h: 2, r: 0.05, mu: 5, overhead: 300 });
     expect(parseCostParams({})).toEqual(DEFAULT_COST_PARAMS);
   });
 

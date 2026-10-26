@@ -1,0 +1,1 @@
+I'm new to chi and will work on it for the next hour. Explain how routing works end to end: how routes are stored in the radix tree, how a request path is matched (URL parameters, wildcards, regular expressions), how middleware chains are built with Use, With, Group and Route, and how chi.Walk visits the routes. Name the key files and functions. Do not modify any files.

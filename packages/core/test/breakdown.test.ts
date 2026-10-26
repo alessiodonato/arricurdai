@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'vitest';
-import { contextBreakdown, DEFAULT_COST_PARAMS, profile, sessionBreakdown, type SessionBlock, type Usage } from '../src/index';
+import { SPEC_PARAMS } from './spec-params';
+import { contextBreakdown, profile, sessionBreakdown, type SessionBlock, type Usage } from '../src/index';
 import { context, session } from './helpers';
 
-const params = DEFAULT_COST_PARAMS; // w1h = 2, r = 0.1, mu = 5
+const params = SPEC_PARAMS; // w1h = 2, r = 0.1, mu = 5
 const call = (cacheWrite: number, cacheRead: number, output = 0): { usage: Usage } => ({
   usage: { input: 0, cacheWrite, cacheWrite5m: 0, cacheWrite1h: cacheWrite, cacheRead, output },
 });
@@ -93,7 +94,7 @@ describe('the breakdown in the report', () => {
     });
     const report = profile(
       { dir: '/t', sessions: [session('s1', '2026-09-01T10:00:00.000Z', { main: ctx })], stats: { lines: 0, empty: 0, malformedJson: 0, notObject: 0, ignored: 0, unknownTypes: {}, invalid: {}, orphanResults: 0 }, duplicateCalls: 0 },
-      { projectRoot: '/repo', generatedAt: '2026-10-26T00:00:00.000Z', changedBetween: () => false },
+      { projectRoot: '/repo', generatedAt: '2026-10-26T00:00:00.000Z', params: SPEC_PARAMS, changedBetween: () => false },
     );
     const { groups, topBlocks, explained } = report.breakdown;
     expect(groups.reduce((total, group) => total + group.cost, 0)).toBeCloseTo(report.summary.totalCost, 9);

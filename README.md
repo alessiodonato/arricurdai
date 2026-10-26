@@ -154,7 +154,7 @@ The parameters live in `arricurdai.config.json`, in the project or wherever `--c
 | --- | --- | --- |
 | `w` | 1.25 | Price of writing to the 5-minute cache. |
 | `w1h` | 2 | Price of writing to the 1-hour cache. |
-| `r` | 0.1 | Price of reading from the cache. |
+| `r` | 0.05 | Price of reading from the cache: 0.05 for Claude 5 models, as the costs Claude Code records show. Set 0.1 for older models. |
 | `mu` | 5 | Price of an output token. |
 | `overhead` | 300 | Tokens of one extra round trip: the tool call, its result and the reply. |
 
@@ -245,9 +245,31 @@ How the replay works:
 - Costs are in price-weighted tokens of each call's own model. A session that switches model mixes prices, and starts again from an empty cache.
 - The transcript format belongs to Claude Code and is not documented. [docs/transcript-schema.md](docs/transcript-schema.md) records what was observed in versions 2.1.301 and 2.1.310. Lines the parser does not understand are counted and skipped.
 
+## Guard: no cache rewrite after a pause
+
+The prompt cache keeps the context of a main session for an hour. After a longer pause, the next prompt writes the whole context to the cache again, at twice the input price, and every later call reads it. In long sessions these rewrites are a large part of the cost. In the [context experiment](experiments/context#results), with a pause before each step, a new session per step with a short note cost 40% less than one long session, and both passed the same tests.
+
+Two hooks do this for you:
+
+- **`arricurdai guard`** runs when you send a prompt. If the cache of a session larger than 100,000 tokens has expired, it stops the prompt once and says what going on would cost. Run `/clear` to start fresh, or send the prompt again to go on.
+- **`arricurdai handoff`** runs when a session starts after that `/clear`. It gives the new session a note on the old one, built from the transcript without a model: the last requests, the files changed, the open tasks and the last reply.
+
+Add them to `~/.claude/settings.json`, or to `.claude/settings.json` for one project:
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "arricurdai guard" }] }],
+    "SessionStart": [{ "matcher": "clear", "hooks": [{ "type": "command", "command": "arricurdai handoff" }] }]
+  }
+}
+```
+
+`arricurdai guard --min-tokens <n>` changes the smallest session worth stopping for. Both hooks read local files only, and on any problem they let the prompt through.
+
 ## Baseline on public repositories
 
-What does a project spend today on context it already knew? We ran five scripted Claude Code sessions on each of three well-known repositories and profiled them.
+What does a project spend today on context it already knew? We ran five scripted Claude Code sessions on each of three well-known repositories and profiled them. The numbers use `r` = 0.1, the cache-read price before Claude 5 models.
 
 The sessions come back to the same area of the code:
 

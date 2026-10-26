@@ -10,6 +10,8 @@ const FIXTURE = {
   project: join(REPO, 'fixtures/acme-shop/project'),
   transcripts: join(REPO, 'fixtures/acme-shop/claude-home/projects/-home-dev-acme-shop'),
 };
+/** The expected values of the fixtures use the cache-read price of the specification. */
+const SPEC_FIXTURE = { ...FIXTURE, config: join(REPO, 'fixtures/spec.config.json') };
 
 const temporary: string[] = [];
 afterAll(() => {
@@ -38,7 +40,7 @@ async function run(options: ProfileCommandOptions, env: Record<string, string> =
 
 describe('arricurdai profile on the fixtures', () => {
   test('prints the summary, the top rediscoveries, the unused memory lines and where the cost goes, in this order', async () => {
-    const { code, stdout, stderr } = await run(FIXTURE);
+    const { code, stdout, stderr } = await run(SPEC_FIXTURE);
     expect(code).toBe(0);
     expect(stderr).toBe('');
     const summary = stdout.indexOf('Summary');
@@ -55,13 +57,13 @@ describe('arricurdai profile on the fixtures', () => {
   });
 
   test('counts the broken lines instead of failing', async () => {
-    const { code, stdout } = await run(FIXTURE);
+    const { code, stdout } = await run(SPEC_FIXTURE);
     expect(code).toBe(0);
     expect(stdout).toContain('Lines skipped           5 of 109: 3 malformed, 1 of unknown type "future-feature", 1 "assistant" with missing fields');
   });
 
   test('--json prints the same report, valid against the schema exported by core', async () => {
-    const { code, stdout } = await run({ ...FIXTURE, json: true });
+    const { code, stdout } = await run({ ...SPEC_FIXTURE, json: true });
     expect(code).toBe(0);
     const report = reportSchema.parse(JSON.parse(stdout));
     expect(report.summary.totalCost).toBe(167185);
@@ -69,7 +71,7 @@ describe('arricurdai profile on the fixtures', () => {
   });
 
   test('--sessions limits the sessions measured', async () => {
-    const { stdout } = await run({ ...FIXTURE, json: true, sessions: '1' });
+    const { stdout } = await run({ ...SPEC_FIXTURE, json: true, sessions: '1' });
     expect(JSON.parse(stdout).window).toMatchObject({ sessions: 1, available: 3 });
   });
 
@@ -78,7 +80,7 @@ describe('arricurdai profile on the fixtures', () => {
     writeFileSync(join(project, 'arricurdai.config.json'), JSON.stringify({ w1h: 1.25 }));
     const { code, stdout } = await run({ project, transcripts: FIXTURE.transcripts, json: true });
     expect(code).toBe(0);
-    expect(JSON.parse(stdout).params).toEqual({ w: 1.25, w1h: 1.25, r: 0.1, mu: 5, overhead: 300 });
+    expect(JSON.parse(stdout).params).toEqual({ w: 1.25, w1h: 1.25, r: 0.05, mu: 5, overhead: 300 });
   });
 
   test('finds the transcripts from the project path in CLAUDE_CONFIG_DIR', async () => {
@@ -101,7 +103,7 @@ describe('arricurdai profile on bad input', () => {
   };
 
   test('a wrong --sessions', async () => {
-    const { code, stderr } = await run({ ...FIXTURE, sessions: '0' });
+    const { code, stderr } = await run({ ...SPEC_FIXTURE, sessions: '0' });
     expect(code).toBe(1);
     expectOneLineError(stderr, 'arricurdai: --sessions must be a whole number of 1 or more, got "0"');
   });
@@ -122,10 +124,10 @@ describe('arricurdai profile on bad input', () => {
     const dir = tempDir();
     writeFileSync(join(dir, 'bad.json'), JSON.stringify({ w: 'high' }));
     writeFileSync(join(dir, 'broken.json'), '{ w: ');
-    const wrong = await run({ ...FIXTURE, config: join(dir, 'bad.json') });
+    const wrong = await run({ ...SPEC_FIXTURE, config: join(dir, 'bad.json') });
     expect(wrong.code).toBe(1);
     expectOneLineError(wrong.stderr, /bad\.json: Invalid arricurdai config\. w: /);
-    expectOneLineError((await run({ ...FIXTURE, config: join(dir, 'missing.json') })).stderr, /cannot read the config file .*missing\.json/);
-    expectOneLineError((await run({ ...FIXTURE, config: join(dir, 'broken.json') })).stderr, /broken\.json is not valid JSON/);
+    expectOneLineError((await run({ ...SPEC_FIXTURE, config: join(dir, 'missing.json') })).stderr, /cannot read the config file .*missing\.json/);
+    expectOneLineError((await run({ ...SPEC_FIXTURE, config: join(dir, 'broken.json') })).stderr, /broken\.json is not valid JSON/);
   });
 });

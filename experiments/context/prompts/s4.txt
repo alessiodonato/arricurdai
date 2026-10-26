@@ -1,0 +1,1 @@
+Change MethodAllowList so that it answers OPTIONS requests itself, whatever the list: 204 No Content with the `Allow` header, without calling the next handler. Update its tests and run `go test ./...` until everything passes.
