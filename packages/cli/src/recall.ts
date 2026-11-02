@@ -146,6 +146,33 @@ export function loadChunks(dir: string, exclude?: string): { chunks: Chunk[]; se
   return { chunks, sessions: files.length };
 }
 
+const REDACTED = '[redacted]';
+/** Secrets with a shape of their own: private keys, JWTs, bearer tokens and the keys of common services. */
+const SECRET_SHAPES = [
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g,
+  /\beyJ[\w-]{8,}\.eyJ[\w-]{8,}\.[\w-]{8,}/g,
+  /\bBearer\s+[\w.~+/-]{20,}=*/g,
+  /\b(?:sk-[\w-]{20,}|x(?:keysib|smtpsib)-[\w-]{20,}|gh[pousr]_\w{30,}|github_pat_\w{30,}|xox[abposr]-[\w-]{10,}|[rs]k_(?:live|test)_\w{16,}|whsec_[\w+/=]{20,}|AKIA[0-9A-Z]{16}|AIza[\w-]{35})/g,
+];
+/** The password in a URL such as postgresql://user:password@host. */
+const URL_PASSWORD = /(\b[a-z][\w+.-]*:\/\/[^\s:/@]*:)[^\s/@]+(?=@)/gi;
+/** A value given to a key that names a secret: in code or a table (`SESSION_SECRET=…`) and in prose (`Password: …`, `la password è …`). */
+const KEYED_SECRETS = [
+  /(\b[A-Z][A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|KEY)[A-Z0-9_]*[`'"]*(?:=[`'"]?|\s*=\s*[`'"]|\s*[:|][\s`'"]*))([^\s`'"|,;]{6,})/g,
+  /(\b(?:password|passwd|secret|token|api[ _-]?key|access[ _-]?key|private[ _-]?key|chiave (?:api|segreta|privata))\b(?: \p{L}+){0,2}[\s*`'"]*(?::|=|è|e'|is\b)[\s*`'"]*)([^\s`'"*|,;]{6,})/giu,
+];
+/** Values after such a key that are not secrets: a word or an identifier, a number, a path, a reference or code. */
+const NOT_SECRET = /^(?:\p{Ll}\p{L}*|\p{Lu}\p{Ll}+|[\d.,%+-]+|[$~./].*|.*[(].*|.*\b(?:process|env|environ)\b.*)$/u;
+
+/** The text with the secrets it shows replaced by [redacted], so that a search does not bring them back. */
+export function redact(text: string): string {
+  let result = text;
+  for (const shape of SECRET_SHAPES) result = result.replace(shape, REDACTED);
+  result = result.replace(URL_PASSWORD, `$1${REDACTED}`);
+  for (const keyed of KEYED_SECRETS) result = result.replace(keyed, (match, key: string, value: string) => (NOT_SECRET.test(value) ? match : `${key}${REDACTED}`));
+  return result;
+}
+
 /** The lines of a chunk around the one that matches the most terms of the query. */
 function excerpt(text: string, query: ReadonlySet<string>): string {
   const lines = text
@@ -165,7 +192,7 @@ function excerpt(text: string, query: ReadonlySet<string>): string {
     if (to < lines.length) size += lines[to++]!.length;
     if (size < EXCERPT_CHARS && from > 0) size += lines[--from]!.length;
   }
-  const text_ = lines.slice(from, to).join('\n');
+  const text_ = redact(lines.slice(from, to).join('\n'));
   return text_.length > EXCERPT_CHARS ? `${text_.slice(0, EXCERPT_CHARS)}…` : text_;
 }
 
@@ -209,7 +236,7 @@ export function formatHits(hits: readonly RecallHit[], query: string, sessions: 
   let used = 0;
   for (const hit of hits) {
     const { timestamp, sessionId, request } = hit.chunk;
-    const what = request ? `request: "${oneLine(request, 120)}"` : 'compaction summary';
+    const what = request ? `request: "${oneLine(redact(request), 120)}"` : 'compaction summary';
     const block = `[${printed.length + 1}] ${timestamp?.slice(0, 10) ?? 'undated'} · session ${sessionId.slice(0, 8)} · ${what}\n${hit.excerpt}`;
     if (printed.length > 0 && used + estimateTokens(block) > maxTokens) break;
     printed.push(block);
@@ -217,7 +244,8 @@ export function formatHits(hits: readonly RecallHit[], query: string, sessions: 
   }
   const where = `${sessions} earlier session${sessions === 1 ? '' : 's'}`;
   const count = printed.length === hits.length ? `${printed.length}` : `${printed.length} of ${hits.length}`;
-  const head = printed.length === 0 ? `arricurdai recall: nothing in ${where} matches "${query}".` : `arricurdai recall: ${count} matches for "${query}" in ${where}.`;
+  const asked = redact(query);
+  const head = printed.length === 0 ? `arricurdai recall: nothing in ${where} matches "${asked}".` : `arricurdai recall: ${count} matches for "${asked}" in ${where}.`;
   return [head, ...printed].join('\n\n');
 }
 
@@ -253,7 +281,7 @@ export async function runRecall(words: readonly string[], options: RecallCommand
   const { chunks, sessions } = loadChunks(dir, io.env.CLAUDE_CODE_SESSION_ID);
   const hits = search(chunks, query, positive(options.limit, 5));
   if (options.json) {
-    const matches = hits.map(({ chunk, score, excerpt: text }) => ({ sessionId: chunk.sessionId, timestamp: chunk.timestamp, request: chunk.request, score, excerpt: text }));
+    const matches = hits.map(({ chunk, score, excerpt: text }) => ({ sessionId: chunk.sessionId, timestamp: chunk.timestamp, request: redact(chunk.request), score, excerpt: text }));
     io.stdout(`${JSON.stringify({ query, sessions, matches }, null, 2)}\n`);
   } else {
     io.stdout(`${formatHits(hits, query, sessions, positive(options.maxTokens, 1_500))}\n`);

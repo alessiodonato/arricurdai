@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { runGuard, runHandoff } from '../src/guard';
-import { formatHits, runRecall, search, sessionChunks, terms } from '../src/recall';
+import { formatHits, redact, runRecall, search, sessionChunks, terms } from '../src/recall';
 
 const user = (timestamp: string, content: unknown, extra: object = {}): string => JSON.stringify({ type: 'user', timestamp, message: { role: 'user', content }, ...extra });
 const assistant = (timestamp: string, content: unknown[], usage: object = { input_tokens: 1, cache_read_input_tokens: 10 }): string =>
@@ -60,6 +60,48 @@ describe('search', () => {
     const text = formatHits(search(chunks, 'fatture dark postgres', 5), 'fatture dark postgres', 1, 30);
     expect(text).toContain('[1]');
     expect(text).not.toContain('[2]');
+  });
+});
+
+describe('redact', () => {
+  it('hides keys and tokens, passwords in URLs and the values given to keys that name a secret', () => {
+    const secrets = [
+      'BREVO_API_KEY=xkeysib-example-0000-not-a-real-key',
+      'export ANTHROPIC_API_KEY=sk-ant-example-0000-not-a-real-key',
+      'DATABASE_URL=postgresql://postgres:Qw7Er8Ty9@db.example.com:5432/railway',
+      '| `SESSION_SECRET` | `4f9a8b7c6d5e4f3a2b1c` |',
+      '**Password:** `Palestra2026`',
+      'la password provvisoria è Bosco-12x',
+      'SESSION_SECRET="Zq8-Wx7_Vb6"',
+      "SECRET_KEY = 'django-insecure-k3y'",
+      'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJlLXBhcnQ',
+    ];
+    for (const line of secrets) expect(redact(line)).toContain('[redacted]');
+    expect(redact(secrets.join('\n'))).not.toMatch(/xkeysib|sk-ant|Qw7Er8Ty9|4f9a8b7c|Palestra2026|Bosco-12x|eyJhbGci|Zq8-Wx7|django-insecure/);
+    expect(redact(secrets[2]!)).toBe('DATABASE_URL=postgresql://postgres:[redacted]@db.example.com:5432/railway');
+  });
+
+  it('leaves alone words, numbers, references and code', () => {
+    const plain = [
+      'Ho la password dimenticata: la reimposto dal pannello.',
+      '| `DATABASE_URL` | riferimento al Postgres interno, via rete privata |',
+      'DATABASE_URL=${{Postgres.DATABASE_URL}} e SESSION_SECRET=${{shared.SESSION_SECRET}}',
+      'postgresql://postgres@localhost:5435/postgres',
+      'CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000 e MAX_TOKENS=150000',
+      'const API_KEY = process.env.API_KEY; password: hashedPassword; SESSION_SECRET: z.string().min(32)',
+      'session 93f3a212, commit 8ef8ce2, coach@example.com',
+      'DATABASE_URL="file:./dev.db" EMAIL_API_KEY= APP_URL=http://localhost:3000 pnpm dev',
+      'milioni di token pesati: 2.586.755 e `SESSION_SECRET`: Generato da Railway',
+    ];
+    for (const line of plain) expect(redact(line)).toBe(line);
+  });
+
+  it('keeps secrets out of what recall prints, even where a long request is cut', () => {
+    const request = `${'Configura le variabili su Railway e ricontrolla. '.repeat(2)}SESSION_SECRET=9f8e7d6c5b4a39281706f5e4d3c2b1a0`;
+    const [hit] = search([{ sessionId: 's1', timestamp: '2026-10-01T09:00:00Z', request, text: `${request}\nPassword: Palestra2026` }], 'password railway', 1);
+    const text = formatHits([hit!], 'password railway', 1, 1_500);
+    expect(text).toContain('Password: [redacted]');
+    expect(text).not.toMatch(/9f8e7|Palestra2026/);
   });
 });
 

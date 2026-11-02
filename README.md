@@ -288,6 +288,7 @@ How it works:
 - **What it leaves out.**
   - Tool results: the files they show can be read again.
   - The current session: when Claude Code runs the command, it already has that session.
+- **Hides secrets.** Passwords, API keys, tokens and the passwords in connection strings print as `[redacted]`, so a search does not bring them into a new session. The same goes for the passages that the note after `/clear` adds.
 
 | Option | Default | What it does |
 | --- | --- | --- |
