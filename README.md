@@ -1,93 +1,175 @@
-# arricurdAI
+<div align="center">
 
-**Stop paying twice for the same context.**
+# 🧠 arricurdAI
 
-Claude Code sends the whole conversation to the model again on every call. A long session reads hundreds of thousands of tokens of context each time, and after a pause of more than an hour its prompt cache has expired: the next prompt writes all of them to the cache again, at twice the input price. arricurdAI shows where your tokens go and keeps the context small without losing what was said:
+### Stop paying twice for the same context.
 
-- **`profile`** shows where the cost of your sessions goes.
-- **`guard`** stops the costly resume of a large session after a pause, so you can start fresh instead.
-- **`handoff`** gives the fresh session a short note on the old one.
-- **`recall`** lets Claude search earlier sessions for what was asked, decided and changed.
+Claude Code sends the whole conversation to the model on every call, and after an hour away it writes all of it to the cache again.<br>
+arricurdAI shows where your tokens go and keeps the context small, **without losing what was said**.
 
-Everything runs on your machine, from the transcripts Claude Code already keeps: no network calls, no telemetry, no model. The name comes from *arricurdari*, Sicilian for "to remember".
+[![Node 20+](https://img.shields.io/badge/node-20+-339933?style=flat-square&logo=nodedotjs&logoColor=white)](#-get-started)
+[![For Claude Code](https://img.shields.io/badge/for-Claude%20Code-d97757?style=flat-square)](#-how-it-works)
+[![Runs locally](https://img.shields.io/badge/runs-locally-3ddc97?style=flat-square)](#-privacy-and-safety)
+[![Telemetry: none](https://img.shields.io/badge/telemetry-none-3ddc97?style=flat-square)](#-privacy-and-safety)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square)](LICENSE)
+[![Website](https://img.shields.io/badge/website-arricurdai-7db2ff?style=flat-square)](https://alessiodonato.github.io/arricurdai/)
 
-[Website](https://alessiodonato.github.io/arricurdai/) · [Get started](#get-started) · [Evidence](#evidence) · [Guide to the report](docs/guide.md)
+[Why](#-why-sessions-get-expensive) ·
+[How it works](#-how-it-works) ·
+[Proof](#-proof) ·
+[Get started](#-get-started) ·
+[FAQ](#-faq) ·
+[Reference](#-reference) ·
+[🇮🇹 Italiano](#-in-breve-in-italiano)
 
-## Why sessions get expensive
+<br>
 
-On Claude 5 models, reading a token from the prompt cache costs 0.05 of the input price, and writing it to the one-hour cache costs twice the input price.
+<img src=".github/assets/demo.svg" alt="arricurdAI in Claude Code: after 19 hours away, the guard stops the first prompt of a 412,000-token session, since going on would write that context to the cache again for about $3.30. After /clear, the new session starts with a note of about 1,000 tokens, and Claude finds the earlier decision with recall." width="880">
 
-1. **Each call reads the whole context again.** A session with 500,000 tokens of context pays about $0.10 per call with Opus 5.5, before the model writes a word.
-2. **A pause empties the cache.** After more than an hour away, the next prompt writes the whole context to the cache again. That one call costs as much as reading the context forty times, and every later call still reads all of it.
-3. **After a pause, starting fresh costs less.** A new session starts from the system prompt and a short note on the old one. The agent reads files again only when it needs them, so every later call is cheaper too.
+</div>
 
-Reading again what the agent already knew costs little: on three public repositories, at most 1.2% of the cost (see the [baseline](#baseline-on-public-repositories)). What costs is the size of the context, and the pauses.
+<br>
 
-## How it works
+## ✨ What you get
 
-| Piece | When it runs | What it does |
-| --- | --- | --- |
-| [`profile`](#profile-see-where-the-tokens-go) | When you run it | The price-weighted cost of every session, the blocks of context that carry it, what compacting at other moments would have saved, memory lines never used and files read again. |
-| [`guard`](#guard-no-cache-rewrite-after-a-pause) | Hook, on every prompt | When the cache of a session over 100,000 tokens has expired, it stops your first prompt once and says what going on would cost. |
-| [`handoff`](#guard-no-cache-rewrite-after-a-pause) | Hook, when a session starts | After `/clear`, it gives the new session a note on the old one. It also tells every session how to run `recall`. |
-| [`recall`](#recall-find-what-earlier-sessions-said) | Run by Claude | Searches the earlier sessions of the project, so that a small context does not lose what was decided. |
+<table>
+  <tr>
+    <td width="33%" valign="top">
+      <h3>📊 See where it goes</h3>
+      <code>profile</code> prices every session and shows the blocks of context that carry the cost, what compacting at other moments would have saved, and the memory lines never used.
+    </td>
+    <td width="33%" valign="top">
+      <h3>✋ No costly resume</h3>
+      <code>guard</code> stops your first prompt to a large session whose cache expired, and tells you what going on would cost. One <code>/clear</code> and you start fresh.
+    </td>
+    <td width="33%" valign="top">
+      <h3>📝 Keep the thread</h3>
+      <code>handoff</code> gives the fresh session a note: your last requests, the files changed, the open tasks, the last reply and the earlier passages that match your prompt.
+    </td>
+  </tr>
+  <tr>
+    <td width="33%" valign="top">
+      <h3>🔎 Nothing is lost</h3>
+      <code>recall</code> lets Claude search earlier sessions for what was asked, decided and changed, so a small context is safe.
+    </td>
+    <td width="33%" valign="top">
+      <h3>🔒 Stays on your machine</h3>
+      No network calls, no telemetry, no model, no API key. It reads the transcripts Claude Code already keeps.
+    </td>
+    <td width="33%" valign="top">
+      <h3>🙈 Secrets stay hidden</h3>
+      Passwords, API keys, tokens and the passwords in connection strings print as <code>[redacted]</code>, so a search does not bring them back.
+    </td>
+  </tr>
+</table>
 
-Coming back to a large session after a pause:
+### 🎯 Made for long sessions
 
-```
-> What should we do next?
+If you keep a Claude Code session open for days, come back to it after lunch or the next morning, or watch a big refactor eat your usage, this is for you. Short sessions without pauses already cost little, and the guard never stops them.
 
-arricurdai: this session was idle for 19h 12m and its prompt cache expired.
-Your prompt would write its 412,000 tokens of context to the cache again, about $3.30, and every later call would read them.
-Run /clear to start a new session: arricurdai will give it a note on this one. Or send the prompt again to go on here.
+## 💸 Why sessions get expensive
 
-> /clear
-```
+Claude Code resends everything it has read and said so far on every call. The prompt cache makes that cheaper, but not free, and it forgets after an hour. With Opus 5.5, at $4 per million input tokens, a session with **500,000 tokens** of context pays:
 
-The new session starts from the system prompt and a note of at most a couple of thousand tokens, instead of 412,000 tokens of context. When Claude needs something older, it runs `recall`.
+| | What happens | Cost |
+| :-: | --- | --- |
+| 📖 | Every call reads the whole context from the cache, at 0.05 of the input price. | about **$0.10 per call**, before the model writes a word |
+| ⏸️ | After more than an hour away, the next prompt writes it all to the cache again, at twice the input price. | about **$4.00 at once**, as much as forty calls |
+| 🆕 | A fresh session after `/clear` starts from the system prompt and a short note. | the old context is never written again, and every later call reads less |
+
+> [!NOTE]
+> Reading again what the agent already knew is a small cost: on three public repositories, at most 1.2% of it (see the [baseline](#baseline-on-public-repositories)). What costs is the **size of the context** and the **pauses**.
+
+## 🔄 How it works
 
 ```mermaid
 flowchart LR
-    A["Prompt after a pause"] --> B{"Cache expired and<br/>context over 100,000 tokens?"}
-    B -- no --> C["The prompt goes through"]
-    B -- yes --> D["guard stops it once<br/>and shows the cost"]
-    D -- "send it again" --> C
-    D -- "/clear" --> E["New session<br/>with the handoff note"]
-    E --> F["Claude runs recall<br/>when it needs the past"]
+    A(["💬 You come back<br/>and send a prompt"]) --> B{"Cache expired and<br/>context over 100k tokens?"}
+    B -->|no| C(["✅ The prompt goes through"])
+    B -->|yes| D["✋ guard stops it once<br/>and shows the cost"]
+    D -->|"send it again"| C
+    D -->|"/clear"| E["📝 New session<br/>with the handoff note"]
+    E --> F["🔎 Claude runs recall<br/>when it needs the past"]
 ```
 
-## Evidence
-
-### Context experiment
-
-Five steps of real work on [go-chi/chi](https://github.com/go-chi/chi) with Claude Code and Sonnet 5.5, under four ways of handling the context. Every variant passed the acceptance tests and the whole test suite.
-
-| Variant | Cost | With a pause before each step |
+| Piece | When it runs | What it does |
 | --- | --- | --- |
-| One long session | $0.38 | $1.07 |
-| Auto-compact at 100,000 tokens | $0.37 (−4%) | $1.02 (−4%) |
-| `/compact` between steps | $0.70 (+82%) | $0.86 (−19%) |
-| New session with a note | $0.48 (+25%) | **$0.64 (−40%)** |
+| 📊 [`profile`](#profile-see-where-the-tokens-go) | When you run it | Where the cost of every session goes, and what other ways of compacting would have saved. |
+| ✋ [`guard`](#guard-no-cache-rewrite-after-a-pause) | Hook, on every prompt | When the cache of a session over 100,000 tokens has expired, it stops your first prompt once and says what going on would cost. |
+| 📝 [`handoff`](#guard-no-cache-rewrite-after-a-pause) | Hook, when a session starts | After `/clear`, a note on the old session. In every session, one line on how to run `recall`. |
+| 🔎 [`recall`](#recall-find-what-earlier-sessions-said) | Run by Claude | Searches the earlier sessions of the project, locally and without a model. |
 
-- **After a pause, a new session with a note costs least.** It does not write the old context to the cache again, and the agent lost almost nothing: it read two files again, 813 tokens.
-- **Without pauses, starting fresh or compacting costs more than it saves** on contexts this small. That is why the guard acts only after a pause, and only on large sessions.
-- **The auto-compact limit never triggered.** The largest context stayed under 100,000 tokens, the smallest window Claude Code accepts. Long sessions need another run.
+<details>
+<summary><b>📝 See the note a fresh session receives</b></summary>
 
-The prompts, the acceptance tests, the scripts and the full results are in [experiments/context](experiments/context).
+<br>
+
+This is the note `handoff` builds on the synthetic project in [`fixtures/`](fixtures), after the guard stopped the prompt *"Orders of exactly 100 should get the discount too. Fix the rule and its tests."*
+
+```text
+Note from arricurdai on the previous session, last active 2026-09-03T11:00:36.000Z. It was cleared after a pause so as not to write its 412,000 tokens of context to the cache again. Read files again when you need their content.
+
+Last requests of the user:
+1. The pricing tests fail on orders of exactly 100. Why?
+
+Last reply of the assistant:
+`computeTotals()` passes the subtotal straight to `applyDiscount()`, so the fix belongs in `src/pricing.ts`: use `amount >= 100`.
+
+Earlier context that matches the prompt you were about to send:
+arricurdai recall: 3 matches for "Orders of exactly 100 should get the discount too. Fix the rule and its tests." in 3 earlier sessions.
+
+[1] 2026-09-03 · session 33333333 · compaction summary
+This session is being continued from a previous conversation. Summary: the pricing rule uses amount > 100; orders of exactly 100 get no discount.
+
+[2] 2026-09-03 · session 33333333 · request: "The pricing tests fail on orders of exactly 100. Why?"
+The pricing tests fail on orders of exactly 100. Why?
+The check uses `amount > 100`, so an order of exactly 100 gets no discount.
+
+[3] 2026-09-02 · session 22222222 · request: "Give a 10% discount on orders over 100, and check how orders are queried."
+Give a 10% discount on orders over 100, and check how orders are queried.
+[Edit /home/dev/acme-shop/src/pricing.ts]
+Orders over 100 now get 10% off in `applyDiscount()` and the tests pass. Orders are read in `listOrders()` in `src/db/orders.ts`.
+```
+
+</details>
+
+<details>
+<summary><b>🔎 See a recall search</b></summary>
+
+<br>
+
+On the same synthetic project:
+
+```text
+$ arricurdai recall "discount rules" --limit 2
+arricurdai recall: 2 matches for "discount rules" in 3 earlier sessions.
+
+[1] 2026-09-03 · session 33333333 · compaction summary
+This session is being continued from a previous conversation. Summary: the pricing rule uses amount > 100; orders of exactly 100 get no discount.
+
+[2] 2026-09-02 · session 22222222 · request: "Give a 10% discount on orders over 100, and check how orders are queried."
+Give a 10% discount on orders over 100, and check how orders are queried.
+[Edit /home/dev/acme-shop/src/pricing.ts]
+Orders over 100 now get 10% off in `applyDiscount()` and the tests pass. Orders are read in `listOrders()` in `src/db/orders.ts`.
+```
+
+</details>
+
+## 📈 Proof
+
+<div align="center">
+<img src=".github/assets/experiment.svg" alt="The same five steps of real work on go-chi/chi with Claude Code and Sonnet 5.5. With a pause before each step: one long session $1.07, auto-compact at 100,000 tokens $1.02, /compact between steps $0.86, a new session with a note $0.64, 40% less. Without pauses: $0.38, $0.37, $0.70 and $0.48." width="880">
+</div>
+
+- 🏆 **After a pause, a new session with a note costs least: 40% less.** It does not write the old context to the cache again, and the agent lost almost nothing: it read two files again, 813 tokens.
+- ⚖️ **Without pauses, starting fresh or compacting costs more than it saves** on contexts this small. That is why the guard acts only after a pause, and only on large sessions.
+- 🔬 **The auto-compact limit never triggered.** The largest context stayed under 100,000 tokens, the smallest window Claude Code accepts. Long sessions need another run.
+
+The prompts, the acceptance tests and the scripts are in [`experiments/context`](experiments/context), so anyone can run it again.
 
 ### Baseline on public repositories
 
 What does a project spend today on context it already knew? We ran five scripted Claude Code sessions on each of three well-known repositories and profiled them. The numbers use `r` = 0.1, the cache-read price before Claude 5 models.
-
-The sessions come back to the same area of the code:
-
-1. `/init`;
-2. an explanation of the area;
-3. a change, committed;
-4. another change, committed;
-5. a question.
-
-They run on Sonnet, with the CLAUDE.md that `/init` wrote.
 
 | Repository | Area | Mean cost K | Read from cache | Rediscovery | S_max | Memory share of cost | Memory lines never used |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -97,35 +179,42 @@ They run on Sonnet, with the CLAUDE.md that `/init` wrote.
 
 *Commits `e954a9c`, `79cab5b` and `0f09c3a`, 26 October 2026, Claude Code 2.1.310.*
 
-What the table says:
-
 - **In short sessions on one area, rediscovery is small.** Between 4% and 6% of the tokens read as context were already known from an earlier session, and `S_max`, the ceiling on what avoiding them could save, stays at or under 1.2% of the cost.
 - **The memory costs more than the rediscovery.** CLAUDE.md, loaded in every session, takes between 3.4% and 4.5% of the cost, and more than half of its lines with something to check were never used. The lines left unused describe the build, lint and test commands, which these sessions never ran, and the parts of each codebase they never touched. In this kind of work, the larger lever is choosing which memory enters the context.
 - **These are measurements of today's spend, not of savings.** Five scripted sessions per repository are an example, not a statistic. Longer projects with real histories can rediscover much more, and the profiler measures them the same way.
 
-The prompts and the script are in [`showcase/`](showcase), with the protocol and its limits, so anyone can run them again.
+<details>
+<summary>How the sessions were run</summary>
 
-## Get started
+<br>
 
-arricurdAI needs Node 20 or later and pnpm. It is not on npm yet, so build it from a clone of this repository:
+The sessions come back to the same area of the code:
 
-```sh
+1. `/init`;
+2. an explanation of the area;
+3. a change, committed;
+4. another change, committed;
+5. a question.
+
+They run on Sonnet, with the CLAUDE.md that `/init` wrote. The prompts and the script are in [`showcase/`](showcase), with the protocol and its limits, so anyone can run them again.
+
+</details>
+
+## 🚀 Get started
+
+You need **Node 20+** and **pnpm**.
+
+```bash
+# 1. build it
 git clone https://github.com/alessiodonato/arricurdai
 cd arricurdai
 pnpm install && pnpm build
+
+# 2. see where a project's tokens go
+node packages/cli/dist/bin.js profile --project /path/to/your/project
 ```
 
-In the examples below, `arricurdai` stands for `node /path/to/arricurdai/packages/cli/dist/bin.js`. Once the package is published, it will be `npx arricurdai`.
-
-**1. Measure.** See where a project's tokens go:
-
-```sh
-arricurdai profile --project /path/to/project
-```
-
-New here? The [guide](docs/guide.md) walks through running the profiler, reading each part of the report, and what to do with what it finds.
-
-**2. Add the hooks.** In `~/.claude/settings.json`, or in `.claude/settings.json` for one project:
+**3. Turn on the hooks.** Add them to `~/.claude/settings.json`, or to `.claude/settings.json` for one project, with the path of the folder you cloned:
 
 ```json
 {
@@ -136,21 +225,94 @@ New here? The [guide](docs/guide.md) walks through running the profiler, reading
 }
 ```
 
-They apply to the Claude Code sessions you start afterwards.
+That's it: they apply to the Claude Code sessions you start afterwards.
 
-**3. Optional: a smaller context and a longer history.**
+> [!TIP]
+> **Two optional settings make it work better.**
+> - **A smaller context:** start Claude Code with `CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000 claude`. The [what if](#what-if) part of the report shows what that would have saved on your sessions, and `recall` finds what a compaction dropped.
+> - **A longer history:** Claude Code deletes transcripts after 30 days. Set `"cleanupPeriodDays": 365` in `~/.claude/settings.json`, so that `profile` and `recall` see further back.
 
-- Start Claude Code with a lower auto-compact window, such as `CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000 claude`. The [what if](#what-if) part of the report shows what it would have saved on your sessions, and `recall` finds what a compaction dropped.
-- Claude Code deletes transcripts after 30 days. Set `"cleanupPeriodDays": 365` in `~/.claude/settings.json`, so that `profile` and `recall` see a longer history.
+> [!NOTE]
+> arricurdAI is not on npm yet. In this README, `arricurdai` stands for `node /path/to/arricurdai/packages/cli/dist/bin.js`. Once it is published, it will be `npx arricurdai`.
 
-## Privacy and safety
+New here? The [guide](docs/guide.md) walks through every part of the profile report, and what to do with what it finds.
 
-- **Nothing leaves your machine.** arricurdAI reads the transcripts and runs `git log` locally. It makes no network call, sends no telemetry and uses no model. Each package has a test that fails if the package imports a module outside a short allowed list, so a network module would fail it.
-- **It only reads your files.** `profile`, `recall` and the hooks read the transcripts. The guard keeps a small state file in the system's temporary folder.
-- **The hooks let the prompt through on any problem.** The guard stops a prompt only once: send it again to go on.
-- **Recall hides secrets.** Passwords, API keys, tokens and the passwords in connection strings print as `[redacted]`, so a search does not bring them into a new session.
+## 🔒 Privacy and safety
 
-## Profile: see where the tokens go
+> [!IMPORTANT]
+> - **Nothing leaves your machine.** arricurdAI reads the transcripts and runs `git log` locally. No network calls, no telemetry, no model. Each package has a test that fails if the package imports a module outside a short allowed list, so a network module cannot slip in.
+> - **It only reads.** `profile`, `recall` and the hooks read the transcripts and change nothing. The guard keeps one small state file in the system's temporary folder.
+> - **The hooks never trap you.** On any problem they let the prompt through, and the guard stops a prompt only once: send it again to go on.
+> - **Secrets stay hidden.** Passwords, API keys, tokens and the passwords in connection strings print as `[redacted]`, so a search does not carry them into a new session.
+
+## ❓ FAQ
+
+<details>
+<summary><b>Will the guard get in my way?</b></summary>
+
+<br>
+
+Only when three things are true at once: the session holds more than 100,000 tokens of context, its cache has expired because more than an hour passed since the last call, and you are sending the first prompt since. It stops that prompt once: send it again and it goes through. `guard --min-tokens <n>` changes the threshold.
+
+</details>
+
+<details>
+<summary><b>What does Claude still know after <code>/clear</code>?</b></summary>
+
+<br>
+
+The note gives it your last three requests, the files changed, the open tasks, the last reply, and up to three passages of earlier sessions that match the prompt you were about to send. Anything else, Claude finds with `recall` or by reading the files again. In the [experiment](#-proof), it read two files again: 813 tokens.
+
+</details>
+
+<details>
+<summary><b>Does it send my code or my conversations anywhere?</b></summary>
+
+<br>
+
+No. It reads local files only, makes no network call and uses no model. See [Privacy and safety](#-privacy-and-safety).
+
+</details>
+
+<details>
+<summary><b>Do I need an API key or an account?</b></summary>
+
+<br>
+
+No. Everything is computed from the transcripts with plain code. The costs come from the token counts Claude Code records.
+
+</details>
+
+<details>
+<summary><b>Will it slow Claude Code down?</b></summary>
+
+<br>
+
+The guard reads only the end of the transcript. A recall search over tens of megabytes of transcripts takes under a second.
+
+</details>
+
+<details>
+<summary><b>Which models does the guard know prices for?</b></summary>
+
+<br>
+
+Opus 5.5, at $4 per million input tokens, and Sonnet 5.5, at $2. For other models it gives the tokens without a price.
+
+</details>
+
+<details>
+<summary><b>How do I turn it off?</b></summary>
+
+<br>
+
+Remove the two hooks from `settings.json`. arricurdAI changes nothing else in Claude Code.
+
+</details>
+
+## 📖 Reference
+
+### Profile: see where the tokens go
 
 ```
 arricurdai profile [--project <path>] [--sessions <n>] [--json] [--config <file>] [--transcripts <dir>]
@@ -166,9 +328,12 @@ arricurdai profile [--project <path>] [--sessions <n>] [--json] [--config <file>
 
 Claude Code keeps a project's transcripts in `~/.claude/projects/<project path with every non-alphanumeric character replaced by ->/`, or under `$CLAUDE_CONFIG_DIR` when that is set.
 
-### Example output
+#### Example output
 
-This is the output on the synthetic project in `fixtures/` (run `pnpm profile:fixtures` after `pnpm build`):
+This is the output on the synthetic project in `fixtures/` (run `pnpm profile:fixtures` after `pnpm build`).
+
+<details>
+<summary>Show the report</summary>
 
 ```
 arricurdai profile · ~/code/arricurdai/fixtures/acme-shop/project
@@ -202,15 +367,17 @@ Memory lines never used in the last 3 sessions
   2 lines have nothing to check, such as a rule of style. They are listed with --json.
 ```
 
+</details>
+
 The fixtures contain broken lines on purpose. The profiler counts them in "Lines skipped" and goes on.
 
 The report ends with a fourth part, [where the cost goes](#where-the-cost-goes). It is left out here, because the usage numbers of the fixtures are invented and do not match their content.
 
-### How it measures
+#### How it measures
 
 Every cost is in price-weighted tokens, that is, in units of the price of one input token. A **turn** is one API call: each call reads the whole context again, from the prompt cache.
 
-#### Cost of a session
+##### Cost of a session
 
 $$K_s = in + w \cdot cw + r \cdot cr + \mu \cdot out$$
 
@@ -219,7 +386,7 @@ $$K_s = in + w \cdot cw + r \cdot cr + \mu \cdot out$$
 - `K_s` includes the session's subagents, and calls that only the session totals record, such as compaction.
 - Writes to the 1-hour cache cost `w1h` instead of `w`. Claude Code main sessions write to the 1-hour cache and subagents to the 5-minute one. With `w1h = w` the formula is exactly the one above.
 
-#### Rent of a block
+##### Rent of a block
 
 A block of `c` tokens that enters the context at turn `t` of a session with `T` turns is written to the cache once, then read again on every later turn:
 
@@ -231,7 +398,7 @@ Memory that is always loaded (CLAUDE.md, MEMORY.md) enters at the first turn:
 
 $$C_{mem} = c_{mem} \cdot (w + r \cdot (T - 1))$$
 
-#### Rediscovery
+##### Rediscovery
 
 A **context read** is a call to `Read`, `Grep` or `Glob`, or a Bash command that only reads (`cat`, `sed -n`, `head`, `tail`, `grep`, `rg`, `find`, `ls`). Its key is its kind (file, search or listing) and its target relative to the project root, so `cat src/a.ts` and `Read src/a.ts` match.
 
@@ -242,7 +409,7 @@ A read is a **rediscovery** when the same key was read in an earlier session of 
 
 A rediscovery costs the rent of its result.
 
-#### Memory
+##### Memory
 
 The profiler measures the memory files Claude Code actually loaded, as the transcript records them:
 
@@ -259,7 +426,7 @@ A memory line is **used** when one of its terms appears in a tool call or an ass
 - Text the agent writes into a memory file, as `/init` does, is not a use.
 - Lines with no such term, such as rules of style, are listed apart as "nothing to check", not as unused.
 
-#### S_max
+##### S_max
 
 $$S_{max} = \frac{\sum \text{rent of rediscoveries}}{\sum K_s}$$
 
@@ -268,7 +435,7 @@ $$S_{max} = \frac{\sum \text{rent of rediscoveries}}{\sum K_s}$$
 - a memory that replaces a rediscovery also costs something;
 - it does not count savings from pruning memory that is never used.
 
-#### Load now or on demand
+##### Load now or on demand
 
 For each memory, the cost model can decide whether to load it at once or let the agent fetch it when needed. A block should be loaded now when
 
@@ -276,7 +443,7 @@ $$c < \frac{p \cdot (r \cdot L + overhead)}{(1 - p) \cdot (w + r \cdot (T - t))}
 
 where `L` is the context already loaded and `p` the probability that the block is needed. Waiting is not free: a later fetch costs one more round trip, which reads the whole context again. The formula is `loadNowThreshold` in `@arricurdai/core`.
 
-#### Parameters
+##### Parameters
 
 The parameters live in `arricurdai.config.json`, in the project or wherever `--config` points. Every field is optional, and an unknown field is an error, so a typo does not go unnoticed.
 
@@ -294,7 +461,7 @@ All prices are relative to the price of one input token.
 { "w1h": 2, "overhead": 400 }
 ```
 
-#### Where the cost goes
+##### Where the cost goes
 
 The last part of the report splits the measured cost of every session among the blocks that made it up. The blocks are:
 
@@ -315,7 +482,8 @@ The parts add up to the measured cost exactly:
 - **A cache rebuild** is a call that wrote the previous context to the cache again instead of reading it, as happens after a pause longer than the cache lifetime. The extra cost is a line of its own.
 - **Writing output** costs `mu` per token.
 
-An example from the [showcase](showcase), five short sessions on `gin-gonic/gin`:
+<details>
+<summary>An example from the <a href="showcase">showcase</a>: five short sessions on <code>gin-gonic/gin</code></summary>
 
 ```
 Where the cost goes
@@ -345,13 +513,15 @@ Where the cost goes
   Turn: the API call where the block entered the context. Kept: the calls that read it again.
 ```
 
+</details>
+
 In sessions this short, most of the cost is output, the commands' results and the text Claude Code adds to every session. The list of skills alone is about 3,000 tokens. In long interactive sessions the picture changes:
 
 - blocks stay in the context for hundreds of calls;
 - thinking stays in the context too;
 - every pause longer than the cache lifetime writes the whole context again, at the price of a cache write.
 
-#### What if
+##### What if
 
 When sessions are long, the report replays them with compactions at other moments, to show what the context size costs:
 
@@ -365,7 +535,7 @@ How the replay works:
 - **The calls that follow** bring the same new content as the real ones, with a smaller context.
 - **These are ceilings.** A compaction drops detail the agent may have to read again, and that cost is not counted.
 
-#### What is approximate
+##### What is approximate
 
 - Token counts are estimates: characters / 4, computed in one function (`estimateTokens`) so that a tokenizer can replace it.
 - A Bash command that reads several files splits its output evenly among them.
@@ -375,18 +545,18 @@ How the replay works:
 - Costs are in price-weighted tokens of each call's own model. A session that switches model mixes prices, and starts again from an empty cache.
 - The transcript format belongs to Claude Code and is not documented. [docs/transcript-schema.md](docs/transcript-schema.md) records what was observed in versions 2.1.301 and 2.1.310. Lines the parser does not understand are counted and skipped.
 
-## Guard: no cache rewrite after a pause
+### Guard: no cache rewrite after a pause
 
-The prompt cache keeps the context of a main session for an hour. After a longer pause, the next prompt writes the whole context to the cache again, at twice the input price, and every later call reads it. In long sessions these rewrites are a large part of the cost. In the [context experiment](#context-experiment), with a pause before each step, a new session per step with a short note cost 40% less than one long session, and both passed the same tests.
+The prompt cache keeps the context of a main session for an hour. After a longer pause, the next prompt writes the whole context to the cache again, at twice the input price, and every later call reads it. In long sessions these rewrites are a large part of the cost. In the [context experiment](#-proof), with a pause before each step, a new session per step with a short note cost 40% less than one long session, and both passed the same tests.
 
 Two hooks act on it:
 
 - **`arricurdai guard`** runs when you send a prompt. If the cache of a session larger than 100,000 tokens has expired, it stops the prompt once and says what going on would cost. Run `/clear` to start fresh, or send the prompt again to go on. `--min-tokens <n>` changes the smallest session worth stopping for.
 - **`arricurdai handoff`** runs when a session starts. After that `/clear`, it gives the new session a note on the old one, built from the transcript without a model: the last requests, the files changed, the open tasks and the last reply. It adds up to three passages of earlier sessions that match the prompt you were about to send, about 800 tokens at most. In every new session, and after a compaction, it adds one line on how to run [`recall`](#recall-find-what-earlier-sessions-said).
 
-The settings are in [Get started](#get-started). Both hooks read local files only, and on any problem they let the prompt through.
+The settings are in [Get started](#-get-started). Both hooks read local files only, and on any problem they let the prompt through.
 
-## Recall: find what earlier sessions said
+### Recall: find what earlier sessions said
 
 A small context is cheaper, but the agent loses what it no longer sees. `arricurdai recall` lets it look that up:
 
@@ -422,15 +592,17 @@ Limits:
 - **It works best with precise words.** It finds names, paths, errors and technical terms well. It does less well with vague questions.
 - **It always prints the best matches it has.** With a vague query, they can be only loosely related.
 
-## Roadmap
+## 🧭 Roadmap
 
-- **Done:** `profile`; `guard` and `handoff`; `recall`, which hides secrets.
-- **Next:**
-  - in the note after `/clear`, only passages that match the prompt well; compaction summaries split on whole lines;
-  - measurements on long real sessions with a lower auto-compact window;
-  - an npm package with a setup command.
+- [x] **`profile`**: where the cost goes, and what other compaction policies would have saved
+- [x] **`guard` and `handoff`**: no cache rewrite after a pause, a new session with a note
+- [x] **`recall`**: search earlier sessions locally, with secrets hidden
+- [ ] In the note after `/clear`, only the passages that match the prompt well
+- [ ] Compaction summaries split on whole lines
+- [ ] Measurements on long real sessions with a lower auto-compact window
+- [ ] An npm package with a setup command
 
-## Development
+## 🧰 Development
 
 ```sh
 pnpm install
@@ -448,6 +620,24 @@ pnpm test    # type checks and Vitest, for every package
 | `experiments/` | The context experiment on go-chi/chi. |
 | `docs/` | The website, the guide and the transcript schema. |
 
-## License
+## 📄 License
 
 [Apache-2.0](LICENSE)
+
+---
+
+## 🇮🇹 In breve, in italiano
+
+**arricurdAI** riduce quello che Claude Code spende per il contesto. A ogni chiamata Claude Code rimanda al modello tutta la conversazione, e dopo più di un'ora di pausa la riscrive da capo nella cache, al doppio del prezzo.
+
+- 📊 **`profile`** mostra dove vanno i token delle tue sessioni.
+- ✋ **`guard`** ferma il primo messaggio a una sessione grande dopo una pausa, e ti dice quanto costerebbe continuare.
+- 📝 **`handoff`** dà alla sessione nuova, dopo `/clear`, una nota su quella vecchia.
+- 🔎 **`recall`** permette a Claude di cercare nelle sessioni precedenti cosa è stato chiesto, deciso e cambiato.
+
+Tutto gira sul tuo computer: nessuna chiamata di rete, nessuna telemetria, nessun modello. Password e chiavi trovate nelle sessioni compaiono come `[redacted]`. Per installarlo, segui [Get started](#-get-started).
+
+<div align="center">
+<br>
+<sub><i>arricurdari</i> is Sicilian for “to remember”. Made with ☕ by Alessio.</sub>
+</div>

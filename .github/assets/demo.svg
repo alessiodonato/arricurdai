@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 524" width="900" height="524" role="img" aria-labelledby="title desc">
+  <title id="title">arricurdAI in Claude Code</title>
+  <desc id="desc">After 19 hours away, the guard stops the first prompt of a session with 412,000 tokens of context: going on would write them to the cache again, about $3.30. After /clear, the new session starts with a note of about 1,000 tokens, and Claude finds the earlier decision with recall.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#10162a"/>
+      <stop offset="1" stop-color="#0b0f1a"/>
+    </linearGradient>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+    <style>
+      .t { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; font-size: 13.5px; fill: #e9edf6; }
+      .m { fill: #9ba5bf; }
+      .s { fill: #7db2ff; }
+      .y { fill: #f7d154; font-weight: 700; }
+      .c { fill: #ff6b5b; font-weight: 700; }
+      .g { fill: #3ddc97; }
+      .gb { fill: #3ddc97; font-weight: 700; }
+      .b { font-weight: 700; }
+      .bar { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 12.5px; fill: #9ba5bf; }
+      .tag { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; }
+    </style>
+  </defs>
+
+  <g filter="url(#shadow)">
+    <rect x="20" y="14" width="860" height="492" rx="14" fill="url(#bg)" stroke="#222a44"/>
+  </g>
+  <path d="M20 28 a14 14 0 0 1 14 -14 h832 a14 14 0 0 1 14 14 v24 h-860 z" fill="#0d1222"/>
+  <line x1="20" y1="52" x2="880" y2="52" stroke="#222a44"/>
+  <circle cx="44" cy="33" r="6" fill="#ff5f57"/>
+  <circle cx="64" cy="33" r="6" fill="#febc2e"/>
+  <circle cx="84" cy="33" r="6" fill="#28c840"/>
+  <text class="bar" x="450" y="37.5" text-anchor="middle">claude · ~/acme-shop</text>
+
+  <g class="t">
+    <text x="48" y="88"><tspan class="s b">&gt;</tspan> Orders of exactly 100 should get the discount too. Fix the rule and its tests.</text>
+
+    <rect x="48" y="104" width="804" height="124" rx="8" fill="#ff6b5b" fill-opacity="0.07" stroke="#ff6b5b" stroke-opacity="0.35"/>
+    <rect x="48" y="104" width="4" height="124" fill="#ff6b5b"/>
+    <text class="tag" x="836" y="124" text-anchor="end" fill="#ff6b5b">GUARD</text>
+    <text x="68" y="129">arricurdai: this session was idle for <tspan class="y">19h 12m</tspan> and its prompt cache expired.</text>
+    <text x="68" y="150">Your prompt would write its <tspan class="y">412,000 tokens</tspan> of context to the cache again,</text>
+    <text x="68" y="171">about <tspan class="c">$3.30</tspan>, and every later call would read them.</text>
+    <text x="68" y="192">Run <tspan class="s b">/clear</tspan> to start a new session: arricurdai will give it a note on this one.</text>
+    <text x="68" y="213">Or send the prompt again to go on here.</text>
+
+    <text x="48" y="262"><tspan class="s b">&gt;</tspan> /clear</text>
+    <text x="48" y="290"><tspan class="gb">✓</tspan><tspan class="m"> New session, with a note on the old one: </tspan><tspan class="gb">about 1,000 tokens</tspan><tspan class="m"> instead of 412,000</tspan></text>
+    <text class="tag" x="836" y="289" text-anchor="end" fill="#3ddc97">HANDOFF</text>
+
+    <text x="48" y="326"><tspan class="s b">&gt;</tspan> Orders of exactly 100 should get the discount too. Fix the rule and its tests.</text>
+    <text x="48" y="360"><tspan class="g">●</tspan> <tspan class="b">Bash</tspan>(arricurdai recall "discount rules")</text>
+    <text class="tag" x="836" y="359" text-anchor="end" fill="#7db2ff">RECALL</text>
+    <text x="68" y="381" class="m">⎿</text>
+    <text x="92" y="381" class="m">arricurdai recall: 2 matches for "discount rules" in 3 earlier sessions.</text>
+    <text x="92" y="402" class="m">[1] 2026-09-03 · session 33333333 · compaction summary</text>
+    <text x="92" y="423" class="m">[2] 2026-09-02 · session 22222222 · request: "Give a 10% discount on orders over 100, …"</text>
+    <text x="48" y="457"><tspan class="g">●</tspan> The rule is in <tspan class="s">applyDiscount()</tspan>, in <tspan class="s">src/pricing.ts</tspan>. I'll make it <tspan class="s">amount &gt;= 100</tspan></text>
+    <text x="68" y="478">and add a test for an order of exactly 100.</text>
+  </g>
+</svg>

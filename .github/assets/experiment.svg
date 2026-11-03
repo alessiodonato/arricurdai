@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 400" width="900" height="400" role="img" aria-labelledby="title desc">
+  <title id="title">The same five steps under four ways of handling the context</title>
+  <desc id="desc">Five steps of real work on go-chi/chi with Claude Code and Sonnet 5.5. With a pause before each step: one long session $1.07, auto-compact at 100,000 tokens $1.02, /compact between steps $0.86, a new session with a note $0.64, 40% less. Without pauses: $0.38, $0.37, $0.70 and $0.48.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#10162a"/>
+      <stop offset="1" stop-color="#0b0f1a"/>
+    </linearGradient>
+    <style>
+      .f { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .h { font-size: 18px; font-weight: 700; fill: #e9edf6; }
+      .sub { font-size: 13px; fill: #9ba5bf; }
+      .l { font-size: 14px; fill: #e9edf6; }
+      .lw { font-size: 14px; font-weight: 700; fill: #3ddc97; }
+      .v { font-size: 13px; font-weight: 700; fill: #e9edf6; }
+      .vm { font-size: 12px; fill: #9ba5bf; }
+      .d { font-weight: 400; fill: #9ba5bf; }
+      .win { font-weight: 700; fill: #3ddc97; }
+      .leg { font-size: 12.5px; fill: #9ba5bf; }
+      .src { font-size: 11.5px; fill: #6b7493; }
+    </style>
+  </defs>
+
+  <rect x="10" y="10" width="880" height="380" rx="16" fill="url(#bg)" stroke="#222a44"/>
+  <text class="f h" x="40" y="52">The same five steps on go-chi/chi, under four ways of handling the context</text>
+  <text class="f sub" x="40" y="76">Claude Code with Sonnet 5.5 · cost in USD · every variant passed the same tests</text>
+
+  <rect x="40" y="96" width="12" height="12" rx="3" fill="#7db2ff"/>
+  <text class="f leg" x="58" y="106.5">With a pause before each step</text>
+  <rect x="262" y="99" width="12" height="7" rx="2" fill="#9ba5bf" fill-opacity="0.55"/>
+  <text class="f leg" x="280" y="106.5">Without pauses</text>
+
+  <text class="f l" x="40" y="151">One long session</text>
+  <rect x="250" y="137" width="520" height="18" rx="4" fill="#7db2ff"/>
+  <text class="f v" x="780" y="151">$1.07</text>
+  <rect x="250" y="159" width="184.7" height="10" rx="3" fill="#9ba5bf" fill-opacity="0.55"/>
+  <text class="f vm" x="443" y="168">$0.38</text>
+
+  <text class="f l" x="40" y="211">Auto-compact at 100k</text>
+  <rect x="250" y="197" width="495.7" height="18" rx="4" fill="#7db2ff"/>
+  <text class="f v" x="756" y="211">$1.02 <tspan class="d">−4%</tspan></text>
+  <rect x="250" y="219" width="179.8" height="10" rx="3" fill="#9ba5bf" fill-opacity="0.55"/>
+  <text class="f vm" x="438" y="228">$0.37 −4%</text>
+
+  <text class="f l" x="40" y="271">/compact between steps</text>
+  <rect x="250" y="257" width="417.9" height="18" rx="4" fill="#7db2ff"/>
+  <text class="f v" x="678" y="271">$0.86 <tspan class="d">−19%</tspan></text>
+  <rect x="250" y="279" width="340.2" height="10" rx="3" fill="#9ba5bf" fill-opacity="0.55"/>
+  <text class="f vm" x="598" y="288">$0.70 +82%</text>
+
+  <text class="f lw" x="40" y="331">New session with a note</text>
+  <rect x="250" y="317" width="311" height="18" rx="4" fill="#3ddc97"/>
+  <text class="f v" x="571" y="331">$0.64 <tspan class="win">−40%</tspan></text>
+  <rect x="250" y="339" width="233.3" height="10" rx="3" fill="#9ba5bf" fill-opacity="0.55"/>
+  <text class="f vm" x="491" y="348">$0.48 +25%</text>
+
+  <text class="f src" x="40" y="376">Source: experiments/context. With a pause, each step also pays to write its context to the cache again, after more than an hour.</text>
+</svg>
