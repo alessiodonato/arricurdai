@@ -61,6 +61,26 @@ describe('search', () => {
     expect(text).toContain('[1]');
     expect(text).not.toContain('[2]');
   });
+
+  it('shows the line that holds the rarest words of the query, not the one that repeats a common word', () => {
+    const filler = Array.from({ length: 20 }, () => 'More notes on the build, written after the last deploy.');
+    const long = { sessionId: 's1', timestamp: '2026-10-01T09:00:00Z', request: 'Check staging', text: ['Check staging: staging deploy, staging logs, staging users.', ...filler, 'Brevo sends from noreply on staging.'].join('\n') };
+    const others = ['staging is up', 'staging again', 'staging is slow'].map((text, index) => ({ sessionId: `s${index + 2}`, timestamp: '2026-10-02T09:00:00Z', request: text, text }));
+    const [first] = search([long, ...others], 'brevo staging', 1);
+    expect(first?.chunk).toBe(long);
+    expect(first?.excerpt).toContain('Brevo sends from noreply');
+    expect(first?.coverage).toBe(1);
+  });
+
+  it('with a minimum coverage, leaves out a chunk whose excerpt holds too little of the query', () => {
+    const filler = Array.from({ length: 20 }, () => 'Notes on the invoices and the reports of the month.');
+    const scattered = { sessionId: 's1', timestamp: '2026-10-01T09:00:00Z', request: 'Brevo setup', text: ['Brevo setup', ...filler, 'The sender is in mittente.ts'].join('\n') };
+    const together = { sessionId: 's2', timestamp: '2026-10-02T09:00:00Z', request: 'Brevo', text: 'Brevo: il mittente è noreply.' };
+    const all = search([scattered, together], 'brevo mittente', 2);
+    expect(all).toHaveLength(2);
+    expect(all.find((hit) => hit.chunk === scattered)!.coverage).toBeLessThan(0.9);
+    expect(search([scattered, together], 'brevo mittente', 2, 0.9).map((hit) => hit.chunk)).toEqual([together]);
+  });
 });
 
 describe('redact', () => {
@@ -136,6 +156,23 @@ describe('handoff with recall', () => {
     expect(note).toContain('Earlier context that matches the prompt you were about to send');
     expect(note).toContain('reverse charge');
     expect(note).toContain('arricurdai recall "<words>"');
+  });
+
+  it('leaves out the earlier context when it matches the stopped prompt only loosely', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'arricurdai-recall-'));
+    writeFileSync(join(dir, 'old.jsonl'), older.join('\n'));
+    const big = { input_tokens: 2, cache_creation_input_tokens: 1_000, cache_read_input_tokens: 299_000, cache_creation: { ephemeral_1h_input_tokens: 1_000 } };
+    const last = join(dir, 'last.jsonl');
+    writeFileSync(last, [user('2026-10-25T09:00:00Z', 'Refactor the invoice module'), assistant('2026-10-25T09:05:00Z', [{ type: 'text', text: 'Refactor done.' }], big)].join('\n'));
+    const out: string[] = [];
+    const io = (at: string) => ({ stdout: (text: string) => out.push(text), now: () => new Date(at), stateDir: join(dir, 'state'), recallCommand: 'arricurdai recall' });
+
+    runGuard(JSON.stringify({ session_id: 'last', transcript_path: last, cwd: '/repo', prompt: 'Plan the calendar sync with Google and the push notifications for the invoices' }), {}, io('2026-10-26T12:00:00Z'));
+    runHandoff(JSON.stringify({ session_id: 'new', transcript_path: join(dir, 'new.jsonl'), cwd: '/repo', source: 'clear' }), io('2026-10-26T12:01:00Z'));
+
+    const note = (JSON.parse(out[1]!) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext;
+    expect(note).toContain('Note from arricurdai on the previous session');
+    expect(note).not.toContain('Earlier context');
   });
 
   it('after a compaction, tells the agent how to look up what the summary left out', () => {

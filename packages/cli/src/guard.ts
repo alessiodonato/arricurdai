@@ -34,6 +34,8 @@ export const DEFAULT_MIN_TOKENS = 100_000;
 const HOUR = 3_600_000;
 const TAIL_BYTES = 2 * 1024 * 1024;
 const MARKER_MAX_AGE = 12 * HOUR;
+/** The share of the stopped prompt that a passage must hold to enter the note: below it, a passage is mostly noise. */
+const NOTE_MIN_COVERAGE = 0.4;
 /** Input price in USD per million tokens, measured from the costs Claude Code records. */
 const INPUT_PRICE: Record<string, number> = { 'claude-opus-5-5': 4, 'claude-sonnet-5-5': 2 };
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
@@ -223,7 +225,7 @@ function afterClear(input: HookInput & { transcript_path: string }, io: HookIO):
   const prompt = pending.prompt?.trim();
   if (prompt) {
     const { chunks, sessions } = loadChunks(dirname(input.transcript_path), input.session_id);
-    const hits = search(chunks, prompt, 3);
+    const hits = search(chunks, prompt, 3, NOTE_MIN_COVERAGE);
     if (hits.length > 0) parts.push(`Earlier context that matches the prompt you were about to send:\n${formatHits(hits, shorten(prompt, 80), sessions, 800)}`);
   }
   return parts;

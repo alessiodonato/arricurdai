@@ -20,6 +20,8 @@ export interface Chunk {
 export interface RecallHit {
   chunk: Chunk;
   score: number;
+  /** The share of the query that the excerpt holds, weighting each term by how rare it is: from 0 to 1. */
+  coverage: number;
   excerpt: string;
 }
 
@@ -173,14 +175,14 @@ export function redact(text: string): string {
   return result;
 }
 
-/** The lines of a chunk around the one that matches the most terms of the query. */
-function excerpt(text: string, query: ReadonlySet<string>): string {
+/** The lines of a chunk around the one that matches the query best: the rarer the terms it shares, the better. */
+function excerpt(text: string, weights: ReadonlyMap<string, number>): string {
   const lines = text
     .split(/\n+/)
     .flatMap((line) => (line.length > 400 ? line.split(/(?<=[.!?;])\s+/) : [line]))
     .map((line) => line.trim())
     .filter(Boolean);
-  const matches = lines.map((line) => terms(line).filter((term) => query.has(term)).length);
+  const matches = lines.map((line) => [...new Set(terms(line))].reduce((total, term) => total + (weights.get(term) ?? 0), 0));
   let best = 0;
   matches.forEach((count, index) => {
     if (count > (matches[best] ?? 0)) best = index;
@@ -188,16 +190,28 @@ function excerpt(text: string, query: ReadonlySet<string>): string {
   let from = best;
   let to = best + 1;
   let size = lines[best]?.length ?? 0;
-  while (size < EXCERPT_CHARS && (from > 0 || to < lines.length)) {
-    if (to < lines.length) size += lines[to++]!.length;
-    if (size < EXCERPT_CHARS && from > 0) size += lines[--from]!.length;
+  // Whole lines around the best one, while they fit: the best line is never cut away.
+  for (let grew = true; grew; ) {
+    grew = false;
+    if (to < lines.length && size + 1 + lines[to]!.length <= EXCERPT_CHARS) {
+      size += 1 + lines[to++]!.length;
+      grew = true;
+    }
+    if (from > 0 && size + 1 + lines[from - 1]!.length <= EXCERPT_CHARS) {
+      size += 1 + lines[--from]!.length;
+      grew = true;
+    }
   }
   const text_ = redact(lines.slice(from, to).join('\n'));
   return text_.length > EXCERPT_CHARS ? `${text_.slice(0, EXCERPT_CHARS)}…` : text_;
 }
 
-/** Ranks the chunks with BM25 (k1 = 1.2, b = 0.75). Newer chunks first on equal scores. */
-export function search(chunks: readonly Chunk[], query: string, limit: number): RecallHit[] {
+/**
+ * Ranks the chunks with BM25 (k1 = 1.2, b = 0.75). Newer chunks first on equal scores.
+ * With `minCoverage`, a chunk counts only when its excerpt holds at least that share of the query: a long chunk can
+ * contain every word of a query by chance, scattered across replies on other subjects.
+ */
+export function search(chunks: readonly Chunk[], query: string, limit: number, minCoverage = 0): RecallHit[] {
   const wanted = [...new Set(terms(query))];
   if (wanted.length === 0 || chunks.length === 0) return [];
   const documents = chunks.map((chunk) => terms(chunk.text));
@@ -206,23 +220,32 @@ export function search(chunks: readonly Chunk[], query: string, limit: number): 
   for (const document of documents) {
     for (const term of new Set(document)) if (wanted.includes(term)) frequency.set(term, (frequency.get(term) ?? 0) + 1);
   }
+  const weights = new Map(wanted.map((term) => {
+    const df = frequency.get(term) ?? 0;
+    return [term, Math.log(1 + (documents.length - df + 0.5) / (df + 0.5))] as const;
+  }));
   const scored = documents.map((document, index) => {
     const counts = new Map<string, number>();
     for (const term of document) if (frequency.has(term)) counts.set(term, (counts.get(term) ?? 0) + 1);
     let score = 0;
-    for (const [term, count] of counts) {
-      const df = frequency.get(term)!;
-      const idf = Math.log(1 + (documents.length - df + 0.5) / (df + 0.5));
-      score += (idf * count * 2.2) / (count + 1.2 * (0.25 + (0.75 * document.length) / averageLength));
-    }
+    for (const [term, count] of counts) score += (weights.get(term)! * count * 2.2) / (count + 1.2 * (0.25 + (0.75 * document.length) / averageLength));
     return { chunk: chunks[index]!, score };
   });
-  const query_ = new Set(wanted);
-  return scored
+  const ranked = scored
     .filter((hit) => hit.score > 0)
-    .sort((a, b) => b.score - a.score || String(b.chunk.timestamp).localeCompare(String(a.chunk.timestamp)))
-    .slice(0, limit)
-    .map((hit) => ({ ...hit, excerpt: excerpt(hit.chunk.text, query_) }));
+    .sort((a, b) => b.score - a.score || String(b.chunk.timestamp).localeCompare(String(a.chunk.timestamp)));
+  const total = [...weights.values()].reduce((sum, weight) => sum + weight, 0);
+  const hits: RecallHit[] = [];
+  // Below the threshold it looks further down the ranking, up to ten times the limit.
+  for (const hit of ranked.slice(0, minCoverage > 0 ? limit * 10 : limit)) {
+    const shown = excerpt(hit.chunk.text, weights);
+    const held = new Set(terms(shown));
+    const coverage = [...weights].reduce((sum, [term, weight]) => sum + (held.has(term) ? weight : 0), 0) / total;
+    if (coverage < minCoverage) continue;
+    hits.push({ ...hit, coverage, excerpt: shown });
+    if (hits.length === limit) break;
+  }
+  return hits;
 }
 
 const oneLine = (text: string, max: number): string => {
