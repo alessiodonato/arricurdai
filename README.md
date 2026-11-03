@@ -82,22 +82,16 @@ Claude Code resends everything it has read and said so far on every call. The pr
 
 ## 🔄 How it works
 
-```mermaid
-flowchart LR
-    A(["💬 You come back<br/>and send a prompt"]) --> B{"Cache expired and<br/>context over 100k tokens?"}
-    B -->|no| C(["✅ The prompt goes through"])
-    B -->|yes| D["✋ guard stops it once<br/>and shows the cost"]
-    D -->|"send it again"| C
-    D -->|"/clear"| E["📝 New session<br/>with the handoff note"]
-    E --> F["🔎 Claude runs recall<br/>when it needs the past"]
-```
+<div align="center">
+<img src=".github/assets/flow.svg" alt="You come back and send a prompt. If the cache expired and the context is over 100,000 tokens, the guard stops the prompt once and shows the cost; otherwise the prompt goes through. Sending it again lets it through. After /clear, a new session starts with the handoff note, and Claude runs recall when it needs the past." width="880">
+</div>
 
 | Piece | When it runs | What it does |
 | --- | --- | --- |
-| 📊 [`profile`](#profile-see-where-the-tokens-go) | When you run it | Where the cost of every session goes, and what other ways of compacting would have saved. |
-| ✋ [`guard`](#guard-no-cache-rewrite-after-a-pause) | Hook, on every prompt | When the cache of a session over 100,000 tokens has expired, it stops your first prompt once and says what going on would cost. |
-| 📝 [`handoff`](#guard-no-cache-rewrite-after-a-pause) | Hook, when a session starts | After `/clear`, a note on the old session. In every session, one line on how to run `recall`. |
-| 🔎 [`recall`](#recall-find-what-earlier-sessions-said) | Run by Claude | Searches the earlier sessions of the project, locally and without a model. |
+| [`profile`](#profile-see-where-the-tokens-go) | When you run it | Where the cost of every session goes, and what other ways of compacting would have saved. |
+| [`guard`](#guard-no-cache-rewrite-after-a-pause) | Hook, on every prompt | When the cache of a session over 100,000 tokens has expired, it stops your first prompt once and says what going on would cost. |
+| [`handoff`](#guard-no-cache-rewrite-after-a-pause) | Hook, when a session starts | After `/clear`, a note on the old session. In every session, one line on how to run `recall`. |
+| [`recall`](#recall-find-what-earlier-sessions-said) | Run by Claude | Searches the earlier sessions of the project, locally and without a model. |
 
 <details>
 <summary><b>📝 See the note a fresh session receives</b></summary>

@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 300" width="900" height="300" role="img" aria-labelledby="title desc">
+  <title id="title">How arricurdAI works</title>
+  <desc id="desc">You come back and send a prompt. If the cache expired and the context is over 100,000 tokens, the guard stops the prompt once and shows the cost; otherwise the prompt goes through. Sending it again lets it through. After /clear, a new session starts with the handoff note, and Claude runs recall when it needs the past.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#10162a"/>
+      <stop offset="1" stop-color="#0b0f1a"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#5b6688"/>
+    </marker>
+    <style>
+      .f { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+      .box { fill: #141b33; stroke: #2a3354; }
+      .t { font-size: 13.5px; fill: #e9edf6; text-anchor: middle; }
+      .lab { font-size: 12px; fill: #9ba5bf; }
+      .line { fill: none; stroke: #5b6688; stroke-width: 1.6; }
+    </style>
+  </defs>
+
+  <rect x="10" y="10" width="880" height="280" rx="16" fill="url(#bg)" stroke="#222a44"/>
+
+  <g class="f">
+    <rect class="box" x="30" y="60" width="165" height="64" rx="10"/>
+    <rect x="30" y="60" width="4" height="64" rx="2" fill="#9ba5bf"/>
+    <text class="t" x="114" y="87">You come back</text>
+    <text class="t" x="114" y="107">and send a prompt</text>
+
+    <polygon class="box" points="255,92 274,60 401,60 420,92 401,124 274,124" stroke="#f7d154" stroke-opacity="0.7"/>
+    <text class="t" x="337.5" y="87">Cache expired and</text>
+    <text class="t" x="337.5" y="107">context over 100k?</text>
+
+    <rect class="box" x="480" y="60" width="165" height="64" rx="10"/>
+    <rect x="480" y="60" width="4" height="64" rx="2" fill="#ff6b5b"/>
+    <text class="t" x="564" y="87"><tspan fill="#ff6b5b" font-weight="700">guard</tspan> stops it once</text>
+    <text class="t" x="564" y="107">and shows the cost</text>
+
+    <rect class="box" x="705" y="60" width="165" height="64" rx="10"/>
+    <rect x="705" y="60" width="4" height="64" rx="2" fill="#3ddc97"/>
+    <text class="t" x="789" y="87">New session with</text>
+    <text class="t" x="789" y="107">the <tspan fill="#3ddc97" font-weight="700">handoff</tspan> note</text>
+
+    <rect class="box" x="255" y="190" width="165" height="64" rx="10"/>
+    <rect x="255" y="190" width="4" height="64" rx="2" fill="#9ba5bf"/>
+    <text class="t" x="339" y="217">The prompt</text>
+    <text class="t" x="339" y="237">goes through</text>
+
+    <rect class="box" x="705" y="190" width="165" height="64" rx="10"/>
+    <rect x="705" y="190" width="4" height="64" rx="2" fill="#7db2ff"/>
+    <text class="t" x="789" y="217">Claude runs <tspan fill="#7db2ff" font-weight="700">recall</tspan></text>
+    <text class="t" x="789" y="237">when it needs the past</text>
+
+    <path class="line" d="M195 92 H252" marker-end="url(#arrow)"/>
+    <path class="line" d="M420 92 H477" marker-end="url(#arrow)"/>
+    <text class="lab" x="448.5" y="84" text-anchor="middle">yes</text>
+    <path class="line" d="M645 92 H702" marker-end="url(#arrow)"/>
+    <text class="lab" x="673.5" y="84" text-anchor="middle">/clear</text>
+    <path class="line" d="M337.5 124 V187" marker-end="url(#arrow)"/>
+    <text class="lab" x="346" y="161">no</text>
+    <path class="line" d="M562.5 124 V222 H423" marker-end="url(#arrow)"/>
+    <text class="lab" x="491" y="214" text-anchor="middle">send it again</text>
+    <path class="line" d="M787.5 124 V187" marker-end="url(#arrow)"/>
+  </g>
+</svg>
