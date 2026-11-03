@@ -255,7 +255,7 @@ Only when three things are true at once: the session holds more than 100,000 tok
 
 <br>
 
-The note gives it your last three requests, the files changed, the open tasks, the last reply, and up to three passages of earlier sessions that match the prompt you were about to send. Anything else, Claude finds with `recall` or by reading the files again. In the [experiment](#-proof), it read two files again: 813 tokens.
+The note gives it your last three requests, the files changed, the open tasks, the last reply, and up to three passages of earlier sessions that match well the prompt you were about to send. Anything else, Claude finds with `recall` or by reading the files again. In the [experiment](#-proof), it read two files again: 813 tokens.
 
 </details>
 
@@ -546,7 +546,7 @@ The prompt cache keeps the context of a main session for an hour. After a longer
 Two hooks act on it:
 
 - **`arricurdai guard`** runs when you send a prompt. If the cache of a session larger than 100,000 tokens has expired, it stops the prompt once and says what going on would cost. Run `/clear` to start fresh, or send the prompt again to go on. `--min-tokens <n>` changes the smallest session worth stopping for.
-- **`arricurdai handoff`** runs when a session starts. After that `/clear`, it gives the new session a note on the old one, built from the transcript without a model: the last requests, the files changed, the open tasks and the last reply. It adds up to three passages of earlier sessions that match the prompt you were about to send, about 800 tokens at most. In every new session, and after a compaction, it adds one line on how to run [`recall`](#recall-find-what-earlier-sessions-said).
+- **`arricurdai handoff`** runs when a session starts. After that `/clear`, it gives the new session a note on the old one, built from the transcript without a model: the last requests, the files changed, the open tasks and the last reply. It adds up to three passages of earlier sessions that match the prompt you were about to send, about 800 tokens at most: only those whose excerpt holds at least 40% of the prompt, rare words weighing more, so that a loose match does not fill the note with noise. In every new session, and after a compaction, it adds one line on how to run [`recall`](#recall-find-what-earlier-sessions-said).
 
 The settings are in [Get started](#-get-started). Both hooks read local files only, and on any problem they let the prompt through.
 
@@ -568,6 +568,7 @@ How it works:
 
 - **The search is lexical (BM25), without a model.** It reads local files only.
 - **Matches across word forms.** It folds singular and plural in Italian and English, so `fattura` finds `fatture`, and it splits identifiers such as `MethodAllowList`.
+- **Shows the line that matters.** Each passage is the line that holds the rarest words of the query, with whole lines around it.
 - **What it leaves out.**
   - Tool results: the files they show can be read again.
   - The current session: when Claude Code runs the command, it already has that session.
@@ -591,7 +592,7 @@ Limits:
 - [x] **`profile`**: where the cost goes, and what other compaction policies would have saved
 - [x] **`guard` and `handoff`**: no cache rewrite after a pause, a new session with a note
 - [x] **`recall`**: search earlier sessions locally, with secrets hidden
-- [ ] In the note after `/clear`, only the passages that match the prompt well
+- [x] **The note after `/clear`**: only the passages that match the prompt well
 - [ ] Compaction summaries split on whole lines
 - [ ] Measurements on long real sessions with a lower auto-compact window
 - [ ] An npm package with a setup command
