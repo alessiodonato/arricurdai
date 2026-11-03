@@ -158,21 +158,34 @@ const SECRET_SHAPES = [
 ];
 /** The password in a URL such as postgresql://user:password@host. */
 const URL_PASSWORD = /(\b[a-z][\w+.-]*:\/\/[^\s:/@]*:)[^\s/@]+(?=@)/gi;
+/** The password after an email, in a pair such as `user@example.com` / `password`. */
+const EMAIL_PASSWORD = /(\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+`?\s*\/\s*`?)([^\s`'"/@,;|]{6,})/g;
+/** A line about passwords, where a value written as code is likely one: `password \`…\``, `password — \`…\``, a list. */
+const PASSWORD_LINE = /\b(?:password|passwd|pwd|pw|credenziali|credentials)\b/i;
+const CODE_VALUE = /`([^`\s]{6,})`/g;
+/** Code in such a line that is not a password: an email, a name in capitals, lowercase words joined by _ or -, a commit, a path, a file, a call, a module or a setting. */
+const NOT_PASSWORD = /@|^[A-Z0-9_]+$|^[a-z]+(?:[_-][a-z]+)+$|^[0-9a-f]{7,40}$|[/.(:=]/;
 /** A value given to a key that names a secret: in code or a table (`SESSION_SECRET=…`) and in prose (`Password: …`, `la password è …`). */
 const KEYED_SECRETS = [
   /(\b[A-Z][A-Z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|KEY)[A-Z0-9_]*[`'"]*(?:=[`'"]?|\s*=\s*[`'"]|\s*[:|][\s`'"]*))([^\s`'"|,;]{6,})/g,
-  /(\b(?:password|passwd|secret|token|api[ _-]?key|access[ _-]?key|private[ _-]?key|chiave (?:api|segreta|privata))\b(?: \p{L}+){0,2}[\s*`'"]*(?::|=|è|e'|is\b)[\s*`'"]*)([^\s`'"*|,;]{6,})/giu,
+  /(\b(?:password|passwd|pwd|pw|secret|token|api[ _-]?key|access[ _-]?key|private[ _-]?key|chiave (?:api|segreta|privata))\b(?: \p{L}+){0,3}[\s*`'"]*(?::|=|è|e'|is\b|—|–)[\s*`'"]*)([^\s`'"*|,;]{6,})/giu,
 ];
 /** Values after such a key that are not secrets: a word or an identifier, a number, a path, a reference or code. */
 const NOT_SECRET = /^(?:\p{Ll}\p{L}*|\p{Lu}\p{Ll}+|[\d.,%+-]+|[$~./].*|.*[(].*|.*\b(?:process|env|environ)\b.*)$/u;
+/** Tests a value without the punctuation that may close the sentence after it, as in «la password è sbagliata». */
+const notSecret = (value: string): boolean => NOT_SECRET.test(value.replace(/[.,:;!?»”"')\]]+$/u, ''));
 
 /** The text with the secrets it shows replaced by [redacted], so that a search does not bring them back. */
 export function redact(text: string): string {
   let result = text;
   for (const shape of SECRET_SHAPES) result = result.replace(shape, REDACTED);
   result = result.replace(URL_PASSWORD, `$1${REDACTED}`);
-  for (const keyed of KEYED_SECRETS) result = result.replace(keyed, (match, key: string, value: string) => (NOT_SECRET.test(value) ? match : `${key}${REDACTED}`));
-  return result;
+  result = result.replace(EMAIL_PASSWORD, (match, before: string, value: string) => (notSecret(value) ? match : `${before}${REDACTED}`));
+  for (const keyed of KEYED_SECRETS) result = result.replace(keyed, (match, key: string, value: string) => (notSecret(value) ? match : `${key}${REDACTED}`));
+  return result
+    .split('\n')
+    .map((line) => (PASSWORD_LINE.test(line) ? line.replace(CODE_VALUE, (match, value: string) => (notSecret(value) || NOT_PASSWORD.test(value) ? match : `\`${REDACTED}\``)) : line))
+    .join('\n');
 }
 
 /** The lines of a chunk around the one that matches the query best: the rarer the terms it shares, the better. */

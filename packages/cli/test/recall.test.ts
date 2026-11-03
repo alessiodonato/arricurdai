@@ -95,9 +95,15 @@ describe('redact', () => {
       'SESSION_SECRET="Zq8-Wx7_Vb6"',
       "SECRET_KEY = 'django-insecure-k3y'",
       'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJlLXBhcnQ',
+      '- test: `coach@example.com` / `Rb7Kd2mX`',
+      'la pw del coach è Xyz-123',
+      'le password generate sono: `Kx7pQ2zw`, `Wm4tR9ex`',
+      'accesso coach: `coach@example.com`, password `Hq5vN8rT2w`',
+      'entra e cambia la password — `Zt8Lp3Qw`',
     ];
     for (const line of secrets) expect(redact(line)).toContain('[redacted]');
-    expect(redact(secrets.join('\n'))).not.toMatch(/xkeysib|sk-ant|Qw7Er8Ty9|4f9a8b7c|Palestra2026|Bosco-12x|eyJhbGci|Zq8-Wx7|django-insecure/);
+    expect(redact(secrets.join('\n'))).not.toMatch(/xkeysib|sk-ant|Qw7Er8Ty9|4f9a8b7c|Palestra2026|Bosco-12x|eyJhbGci|Zq8-Wx7|django-insecure|Rb7Kd2mX|Xyz-123|Kx7pQ2zw|Wm4tR9ex|Hq5vN8rT2w|Zt8Lp3Qw/);
+    expect(redact('accesso coach: `coach@example.com`, password `Hq5vN8rT2w`')).toContain('`coach@example.com`');
     expect(redact(secrets[2]!)).toBe('DATABASE_URL=postgresql://postgres:[redacted]@db.example.com:5432/railway');
   });
 
@@ -112,6 +118,11 @@ describe('redact', () => {
       'session 93f3a212, commit 8ef8ce2, coach@example.com',
       'DATABASE_URL="file:./dev.db" EMAIL_API_KEY= APP_URL=http://localhost:3000 pnpm dev',
       'milioni di token pesati: 2.586.755 e `SESSION_SECRET`: Generato da Railway',
+      'scrivi a marta@example.com / coach@example.com, ruolo marta@example.com / coach',
+      'la password si salva con `bcrypt` in `passwordHash`, e `SESSION_SECRET` sta in `lib/auth.ts`',
+      'password reimpostata con `pnpm db:seed`',
+      'per la password usa `node:crypto`, il cookie `crabs_session`, lo scope `write_packages`, il filtro `variant=nuovo` e il commit `a1b2c3d`',
+      'Password aggiornata e Marta è entrata. Al login compare «Questa password è sbagliata».',
     ];
     for (const line of plain) expect(redact(line)).toBe(line);
   });
