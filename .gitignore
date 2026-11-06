@@ -8,3 +8,11 @@ coverage/
 # file locali di Claude Code
 /.claude/settings.local.json
 /CLAUDE.local.md
+
+# segreti: il repository è pubblico
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
