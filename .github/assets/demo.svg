@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 524" width="900" height="524" role="img" aria-labelledby="title desc">
   <title id="title">arricurdAI in Claude Code</title>
-  <desc id="desc">After 19 hours away, the guard stops the first prompt of a session with 412,000 tokens of context: going on would write them to the cache again, about $3.30. After /clear, the new session starts with a note of about 1,000 tokens, and Claude finds the earlier decision with recall.</desc>
+  <desc id="desc">After 19 hours away, the guard stops the first prompt of a session with 412,000 tokens of context: going on would write them to the cache again, about $3.30. After /clear, the new session starts with a note of about 3,000 tokens, and Claude finds the earlier decision with recall.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="#10162a"/>
@@ -46,7 +46,7 @@
     <text x="68" y="213">Or send the prompt again to go on here.</text>
 
     <text x="48" y="262"><tspan class="s b">&gt;</tspan> /clear</text>
-    <text x="48" y="290"><tspan class="gb">✓</tspan><tspan class="m"> New session, with a note on the old one: </tspan><tspan class="gb">about 1,000 tokens</tspan><tspan class="m"> instead of 412,000</tspan></text>
+    <text x="48" y="290"><tspan class="gb">✓</tspan><tspan class="m"> New session, with a note on the old one: </tspan><tspan class="gb">about 3,000 tokens</tspan><tspan class="m"> instead of 412,000</tspan></text>
     <text class="tag" x="836" y="289" text-anchor="end" fill="#3ddc97">HANDOFF</text>
 
     <text x="48" y="326"><tspan class="s b">&gt;</tspan> Orders of exactly 100 should get the discount too. Fix the rule and its tests.</text>

@@ -24,7 +24,7 @@ arricurdAI shows where your tokens go and keeps the context small, **without los
 
 <br>
 
-<img src=".github/assets/demo.svg" alt="arricurdAI in Claude Code: after 19 hours away, the guard stops the first prompt of a 412,000-token session, since going on would write that context to the cache again for about $3.30. After /clear, the new session starts with a note of about 1,000 tokens, and Claude finds the earlier decision with recall." width="880">
+<img src=".github/assets/demo.svg" alt="arricurdAI in Claude Code: after 19 hours away, the guard stops the first prompt of a 412,000-token session, since going on would write that context to the cache again for about $3.30. After /clear, the new session starts with a note of about 3,000 tokens, and Claude finds the earlier decision with recall." width="880">
 
 </div>
 
@@ -593,7 +593,7 @@ Limits:
 - [x] **`guard` and `handoff`**: no cache rewrite after a pause, a new session with a note
 - [x] **`recall`**: search earlier sessions locally, with secrets hidden
 - [x] **The note after `/clear`**: only the passages that match the prompt well
-- [ ] Compaction summaries split on whole lines
+- [x] **Compaction summaries split on whole lines**, with no secret left apart from its key
 - [ ] Measurements on long real sessions with a lower auto-compact window
 - [ ] An npm package with a setup command
 
