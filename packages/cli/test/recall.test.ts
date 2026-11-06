@@ -40,6 +40,28 @@ describe('sessionChunks', () => {
     expect(chunks[0]!.text).not.toContain('vatFor');
     expect(chunks[2]!.text).toContain('Postgres');
   });
+
+  const summaryParts = (summary: string): string[] => sessionChunks(user('2026-10-02T09:00:00Z', summary, { isCompactSummary: true }), 'old').map((chunk) => chunk.text);
+
+  it('divides a long compaction summary between lines, keeping every line whole', () => {
+    const lines = Array.from({ length: 80 }, (_, index) => `Decision number ${index}: keep the reports on the same database as the orders.`);
+    const parts = summaryParts(lines.join('\n'));
+    expect(parts.length).toBeGreaterThan(1);
+    expect(parts.every((part) => part.length <= 2_000)).toBe(true);
+    expect(parts.flatMap((part) => part.split('\n'))).toEqual(lines);
+  });
+
+  it('divides a line too long for one part between words', () => {
+    const words = Array.from({ length: 500 }, (_, index) => `word${index}`);
+    const parts = summaryParts(words.join(' '));
+    expect(parts.length).toBeGreaterThan(1);
+    expect(parts.every((part) => part.length <= 2_000)).toBe(true);
+    expect(parts.flatMap((part) => part.split(' '))).toEqual(words);
+  });
+
+  it('adds nothing for an empty summary', () => {
+    expect(summaryParts(' \n\n ')).toEqual([]);
+  });
 });
 
 describe('search', () => {
@@ -133,6 +155,17 @@ describe('redact', () => {
     const text = formatHits([hit!], 'password railway', 1, 1_500);
     expect(text).toContain('Password: [redacted]');
     expect(text).not.toMatch(/9f8e7|Palestra2026/);
+  });
+});
+
+describe('compaction summaries and secrets', () => {
+  it('keeps a key and its value in the same part, so that the value stays hidden', () => {
+    const value = 'Not-A-Real-Pass-42';
+    const before = `${'x '.repeat(996)}\nPassword: ${value}`;
+    const chunks = sessionChunks(user('2026-10-02T09:00:00Z', before, { isCompactSummary: true }), 'old');
+    const shown = search(chunks, value, 5).map((hit) => hit.excerpt).join('\n');
+    expect(chunks.map((chunk) => chunk.text).join('')).toContain(value);
+    expect(shown).not.toContain(value);
   });
 });
 

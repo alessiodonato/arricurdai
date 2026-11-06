@@ -101,6 +101,33 @@ export function terms(text: string): string[] {
   return found;
 }
 
+/** A line of a summary, or its pieces between words when it is too long for one part. */
+function linePieces(line: string): string[] {
+  const pieces: string[] = [];
+  let rest = line;
+  while (rest.length > SUMMARY_PART_CHARS) {
+    const space = rest.lastIndexOf(' ', SUMMARY_PART_CHARS);
+    const end = space > 0 ? space : SUMMARY_PART_CHARS;
+    pieces.push(rest.slice(0, end));
+    rest = rest.slice(end).trimStart();
+  }
+  return [...pieces, rest];
+}
+
+/** A compaction summary in parts of whole lines: a cut inside a line would show half a word, and part of a secret away from its key. */
+function summaryParts(summary: string): string[] {
+  const parts: string[] = [];
+  let part = '';
+  for (const line of summary.split('\n').flatMap(linePieces)) {
+    if (part && part.length + 1 + line.length > SUMMARY_PART_CHARS) {
+      parts.push(part);
+      part = '';
+    }
+    part = part ? `${part}\n${line}` : line;
+  }
+  return part.trim() ? [...parts, part] : parts;
+}
+
 /** Splits a transcript into chunks: each request with the replies and edits that followed, and compaction summaries. */
 export function sessionChunks(text: string, sessionId: string): Chunk[] {
   const chunks: Chunk[] = [];
@@ -122,9 +149,7 @@ export function sessionChunks(text: string, sessionId: string): Chunk[] {
       const typed = typeof content === 'string' ? content : blocks(content).filter((block) => block.type === 'text').map((block) => block.text ?? '').join('\n');
       if (entry.isCompactSummary) {
         flush();
-        for (let start = 0; start < typed.length; start += SUMMARY_PART_CHARS) {
-          chunks.push({ sessionId, timestamp: entry.timestamp, request: '', text: typed.slice(start, start + SUMMARY_PART_CHARS) });
-        }
+        for (const part of summaryParts(typed)) chunks.push({ sessionId, timestamp: entry.timestamp, request: '', text: part });
       } else if (typed.trim() && !/^\s*[<[]/.test(typed)) {
         flush();
         current = { timestamp: entry.timestamp, request: typed.trim().slice(0, MAX_REQUEST_CHARS), replies: [] };
