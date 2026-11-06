@@ -1,15 +1,17 @@
 #!/usr/bin/env node
+import { realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { Command } from 'commander';
 import pc from 'picocolors';
 import { DEFAULT_MIN_TOKENS, DEFAULT_STATE_DIR, type HookIO, runGuard, runHandoff } from './guard';
 import { type RecallCommandOptions, runRecall } from './recall';
 import { type ProfileCommandOptions, runProfile } from './run-profile';
+import { runSetup, type SetupOptions } from './setup';
 
 const { version } = createRequire(import.meta.url)('../package.json') as { version: string };
 
 const program = new Command('arricurdai')
-  .description('Measures what a Claude Code project spends on context it already knew.')
+  .description('Shows where the tokens of a Claude Code project go, stops costly resumes, and finds what earlier sessions said.')
   .version(version);
 
 program
@@ -77,6 +79,33 @@ program
   .description('Claude Code SessionStart hook: after /clear, gives the new session a note on the one the guard stopped.')
   .action(async () => {
     process.exitCode = runHandoff(await readStdin(), hookIO());
+  });
+
+/** Reads one line of the terminal. With no terminal to answer from, the answer is no. */
+async function confirm(question: string): Promise<boolean> {
+  if (!process.stdin.isTTY) return false;
+  process.stdout.write(question);
+  for await (const line of process.stdin) return /^\s*y(es)?\s*$/i.test(String(line));
+  return false;
+}
+
+program
+  .command('setup')
+  .description('Turn on the guard and handoff hooks in the Claude Code settings. Shows the changes and asks first.')
+  .option('--project <path>', 'for one project only, in its .claude/settings.local.json')
+  .option('--remove', 'turn the hooks off')
+  .option('-y, --yes', 'apply the changes without asking')
+  .action(async (options: SetupOptions) => {
+    process.exitCode = await runSetup(options, {
+      cwd: process.cwd(),
+      env: process.env,
+      stdout: (text) => process.stdout.write(text),
+      stderr: (text) => process.stderr.write(text),
+      now: () => new Date(),
+      colors: false,
+      bin: realpathSync(process.argv[1] ?? ''),
+      confirm,
+    });
   });
 
 await program.parseAsync();

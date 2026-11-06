@@ -1,8 +1,9 @@
 import { defineConfig } from 'tsup';
 
-// tsup builds the JavaScript only; tsc emits the declarations (see the build script).
+// One file: the workspace packages go inside it, so that npm has a single package to install.
 export default defineConfig({
-  entry: ['src/index.ts', 'src/bin.ts'],
+  entry: ['src/bin.ts'],
+  noExternal: ['@arricurdai/core', '@arricurdai/transcripts'],
   format: ['esm'],
   platform: 'node',
   target: 'node20',

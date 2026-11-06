@@ -1,17 +1,27 @@
 {
   "name": "arricurdai",
-  "version": "0.0.0",
-  "description": "Measures what a Claude Code project spends on context it already knew.",
+  "version": "0.1.0",
+  "description": "Shows where the tokens of a Claude Code project go, stops costly resumes, and finds what earlier sessions said. Local files only.",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alessiodonato/arricurdai.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/alessiodonato/arricurdai#readme",
+  "bugs": "https://github.com/alessiodonato/arricurdai/issues",
+  "keywords": [
+    "claude-code",
+    "tokens",
+    "cost",
+    "context",
+    "prompt-cache",
+    "hooks",
+    "cli"
+  ],
   "type": "module",
   "bin": {
     "arricurdai": "./dist/bin.js"
-  },
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    }
   },
   "files": [
     "dist"
@@ -20,13 +30,17 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsup && tsc -p tsconfig.build.json",
-    "test": "tsc --noEmit && vitest run"
+    "build": "tsc --noEmit && tsup",
+    "test": "tsc --noEmit && vitest run",
+    "prepublishOnly": "pnpm build && pnpm test"
   },
   "dependencies": {
-    "@arricurdai/core": "workspace:*",
-    "@arricurdai/transcripts": "workspace:*",
     "commander": "^14.0.3",
-    "picocolors": "^1.1.1"
+    "picocolors": "^1.1.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@arricurdai/core": "workspace:*",
+    "@arricurdai/transcripts": "workspace:*"
   }
 }

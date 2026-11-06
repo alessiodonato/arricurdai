@@ -23,18 +23,22 @@ importers:
 
   packages/cli:
     dependencies:
-      '@arricurdai/core':
-        specifier: workspace:*
-        version: link:../core
-      '@arricurdai/transcripts':
-        specifier: workspace:*
-        version: link:../transcripts
       commander:
         specifier: ^14.0.3
         version: 14.0.3
       picocolors:
         specifier: ^1.1.1
         version: 1.1.1
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@arricurdai/core':
+        specifier: workspace:*
+        version: link:../core
+      '@arricurdai/transcripts':
+        specifier: workspace:*
+        version: link:../transcripts
 
   packages/core:
     dependencies:

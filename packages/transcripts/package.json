@@ -1,6 +1,7 @@
 {
   "name": "@arricurdai/transcripts",
   "version": "0.0.0",
+  "private": true,
   "description": "Tolerant parser of Claude Code transcripts: API calls, usage, context reads and memory loads.",
   "license": "Apache-2.0",
   "type": "module",

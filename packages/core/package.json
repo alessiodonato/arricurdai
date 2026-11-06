@@ -1,6 +1,7 @@
 {
   "name": "@arricurdai/core",
   "version": "0.0.0",
+  "private": true,
   "description": "Cost model of arricurdAI: price-weighted session cost, rent of context blocks, load-now threshold.",
   "license": "Apache-2.0",
   "type": "module",
