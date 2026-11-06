@@ -500,28 +500,19 @@ footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; g
   <div class="section-head reveal">
     <p class="eyebrow">Start</p>
     <h2>Measure first, then let the hooks work.</h2>
-    <p>It needs Node 20 or later and pnpm. It is not on npm yet, so build it from a clone.</p>
+    <p>It needs Node 20 or later.</p>
   </div>
   <div class="start">
     <div class="card reveal">
-      <h3>1. Build and profile</h3>
-      <div class="code"><pre class="copyable"><code>git clone https://github.com/alessiodonato/arricurdai
-cd arricurdai
-pnpm install && pnpm build
-node packages/cli/dist/bin.js profile --project /path/to/project</code></pre></div>
+      <h3>1. Install and profile</h3>
+      <div class="code"><pre class="copyable"><code>npm install -g arricurdai
+arricurdai profile --project /path/to/project</code></pre></div>
       <p class="small">New here? The <a data-repo="/blob/main/docs/guide.md" href="#">guide</a> explains every part of the report.</p>
     </div>
     <div class="card reveal">
       <h3>2. Add the hooks</h3>
-      <p class="small">In <code>~/.claude/settings.json</code>, or <code>.claude/settings.json</code> for one project:</p>
-      <div class="code"><pre class="copyable"><code>{
-  "hooks": {
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command",
-      "command": "node /path/to/arricurdai/packages/cli/dist/bin.js guard" }] }],
-    "SessionStart": [{ "hooks": [{ "type": "command",
-      "command": "node /path/to/arricurdai/packages/cli/dist/bin.js handoff" }] }]
-  }
-}</code></pre></div>
+      <div class="code"><pre class="copyable"><code>arricurdai setup</code></pre></div>
+      <p class="small">It shows the changes to your Claude Code settings and asks first. <code>arricurdai setup --remove</code> takes them out.</p>
       <p class="small">On any problem the hooks let the prompt through.</p>
     </div>
   </div>

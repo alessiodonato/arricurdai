@@ -8,25 +8,11 @@ This guide takes you from a fresh clone to a report you can act on. `arricurdai 
 - git, so the profiler can tell which files changed between sessions. It also works without git, less precisely.
 - A project where you have used Claude Code. Its sessions are what gets measured.
 
-## 2. Build it
-
-arricurdAI is not on npm yet. Build it from this repository:
+## 2. Install it
 
 ```sh
-pnpm install
-pnpm build
-```
-
-To call it as `arricurdai` from anywhere, add an alias to your shell profile (`~/.zshrc` or `~/.bashrc`):
-
-```sh
-alias arricurdai="node /path/to/arricurdai/packages/cli/dist/bin.js"
-```
-
-To check that it works, run it on the synthetic project in `fixtures/`. The output is in the [README](../README.md#example-output).
-
-```sh
-pnpm profile:fixtures
+npm install -g arricurdai
+arricurdai --version
 ```
 
 ## 3. Profile your project

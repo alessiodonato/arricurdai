@@ -196,38 +196,43 @@ They run on Sonnet, with the CLAUDE.md that `/init` wrote. The prompts and the s
 
 ## 🚀 Get started
 
-You need **Node 20+** and **pnpm**.
+You need **Node 20+**.
 
 ```bash
-# 1. build it
-git clone https://github.com/alessiodonato/arricurdai
-cd arricurdai
-pnpm install && pnpm build
+# 1. install it
+npm install -g arricurdai
 
 # 2. see where a project's tokens go
-node packages/cli/dist/bin.js profile --project /path/to/your/project
+arricurdai profile --project /path/to/your/project
+
+# 3. turn on the hooks: it shows the changes and asks first
+arricurdai setup
 ```
 
-**3. Turn on the hooks.** Add them to `~/.claude/settings.json`, or to `.claude/settings.json` for one project, with the path of the folder you cloned:
+That's it: they apply to the Claude Code sessions you start afterwards. `arricurdai setup --remove` turns them off, and `--project /path/to/project` turns them on for one project only.
+
+<details>
+<summary>Prefer to edit the settings yourself?</summary>
+
+<br>
+
+Add the hooks to `~/.claude/settings.json`, or to `.claude/settings.local.json` for one project:
 
 ```json
 {
   "hooks": {
-    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "node /path/to/arricurdai/packages/cli/dist/bin.js guard" }] }],
-    "SessionStart": [{ "hooks": [{ "type": "command", "command": "node /path/to/arricurdai/packages/cli/dist/bin.js handoff" }] }]
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "arricurdai guard" }] }],
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "arricurdai handoff" }] }]
   }
 }
 ```
 
-That's it: they apply to the Claude Code sessions you start afterwards.
+</details>
 
 > [!TIP]
 > **Two optional settings make it work better.**
 > - **A smaller context:** start Claude Code with `CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000 claude`. The [what if](#what-if) part of the report shows what that would have saved on your sessions, and `recall` finds what a compaction dropped.
 > - **A longer history:** Claude Code deletes transcripts after 30 days. Set `"cleanupPeriodDays": 365` in `~/.claude/settings.json`, so that `profile` and `recall` see further back.
-
-> [!NOTE]
-> arricurdAI is not on npm yet. In this README, `arricurdai` stands for `node /path/to/arricurdai/packages/cli/dist/bin.js`. Once it is published, it will be `npx arricurdai`.
 
 New here? The [guide](docs/guide.md) walks through every part of the profile report, and what to do with what it finds.
 
@@ -235,7 +240,7 @@ New here? The [guide](docs/guide.md) walks through every part of the profile rep
 
 > [!IMPORTANT]
 > - **Nothing leaves your machine.** arricurdAI reads the transcripts and runs `git log` locally. No network calls, no telemetry, no model. Each package has a test that fails if the package imports a module outside a short allowed list, so a network module cannot slip in.
-> - **It only reads.** `profile`, `recall` and the hooks read the transcripts and change nothing. The guard keeps one small state file in the system's temporary folder.
+> - **It only reads.** `profile`, `recall` and the hooks read the transcripts and change nothing. The guard keeps one small state file in the system's temporary folder. `setup` is the one command that writes: only the hooks in your Claude Code settings, after showing you the changes and keeping a copy of the file.
 > - **The hooks never trap you.** On any problem they let the prompt through, and the guard stops a prompt only once: send it again to go on.
 > - **Secrets stay hidden.** Passwords, API keys, tokens and the passwords in connection strings print as `[redacted]`, so a search does not carry them into a new session.
 
@@ -595,7 +600,7 @@ Limits:
 - [x] **The note after `/clear`**: only the passages that match the prompt well
 - [x] **Compaction summaries split on whole lines**, with no secret left apart from its key
 - [ ] Measurements on long real sessions with a lower auto-compact window
-- [ ] An npm package with a setup command
+- [x] **An npm package with a setup command**
 
 ## 🧰 Development
 
