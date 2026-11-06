@@ -169,6 +169,74 @@ describe('compaction summaries and secrets', () => {
   });
 });
 
+describe('secrets across a project', () => {
+  const secret = 'Not-A-Real-Pass-42';
+  const summary = (text: string): string => user('2026-10-02T09:00:00Z', text, { isCompactSummary: true });
+
+  it('hides a value recognized next to its key wherever it appears, even with no key next to it', () => {
+    const chunks = [
+      ...sessionChunks(summary(`Demo account. Password: ${secret}`), 'one'),
+      ...sessionChunks(summary(`Send the staging login to the pilot user: ${secret}, then check the invoices.`), 'two'),
+    ];
+    const hits = search(chunks, 'staging login pilot', 5);
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits.map((hit) => hit.excerpt).join('\n')).not.toContain(secret);
+    expect(hits.map((hit) => hit.excerpt).join('\n')).toContain('[redacted]');
+  });
+
+  it('hides it in the requests that the matches print too', () => {
+    const chunks = [
+      ...sessionChunks(summary(`Password: ${secret}`), 'one'),
+      ...sessionChunks(user('2026-10-03T09:00:00Z', `Why does the staging login fail with ${secret}?`), 'two'),
+    ];
+    const text = formatHits(search(chunks, 'staging login', 5), 'staging login', 2, 1_500);
+    expect(text).toContain('staging login fail');
+    expect(text).not.toContain(secret);
+  });
+
+  it('leaves alone a plain word that happened to be a value', () => {
+    const chunks = [
+      ...sessionChunks(summary('The connection is postgres://app:postgres@db.example.com/shop'), 'one'),
+      ...sessionChunks(summary('We chose postgres for the reports.'), 'two'),
+    ];
+    expect(search(chunks, 'reports', 5)[0]?.excerpt).toContain('postgres');
+  });
+
+  it('leaves alone a value that is already masked', () => {
+    const chunks = [
+      ...sessionChunks(summary('The connection is postgres://app:******@db.example.com/shop'), 'one'),
+      ...sessionChunks(summary('****** The reports are ready ******'), 'two'),
+    ];
+    expect(search(chunks, 'reports', 5)[0]?.excerpt).toContain('****** The reports');
+  });
+
+  it('hides a private key on several lines when the excerpt leaves out its first line', () => {
+    const body = Array.from({ length: 6 }, (_, index) => `not-a-real-key-line-${index}-${'q'.repeat(100)}`);
+    const text = [['-----BEGIN', 'PRIVATE KEY-----'].join(' '), ...body, ['-----END', 'PRIVATE KEY-----'].join(' '), 'The deploy rotation is done.'].join('\n');
+    const shown = search(sessionChunks(summary(text), 'one'), 'deploy rotation', 5).map((hit) => hit.excerpt).join('\n');
+    expect(shown).toContain('rotation');
+    expect(shown).not.toContain('not-a-real-key-line');
+  });
+
+  it('keeps a key with its value where a long reply is cut', () => {
+    const kept = `word: ${secret}`;
+    const reply = `Pass${kept}\n${'report '.repeat(800).slice(0, 5_000 - kept.length - 1)}`;
+    const chunks = sessionChunks([user('2026-10-03T09:00:00Z', 'How is the report?'), assistant('2026-10-03T09:01:00Z', [{ type: 'text', text: reply }])].join('\n'), 'one');
+    const shown = search(chunks, `report ${secret}`, 5).map((hit) => hit.excerpt).join('\n');
+    expect(shown).not.toContain(secret);
+  });
+
+  it('hides secrets in the JSON output, in the query too', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'arricurdai-recall-'));
+    writeFileSync(join(dir, 'old.jsonl'), [summary(`Password: ${secret}`), user('2026-10-03T09:00:00Z', `Why does the staging login fail with ${secret}?`)].join('\n'));
+    let stdout = '';
+    const io = { cwd: dir, env: {}, stdout: (text: string) => { stdout += text; }, stderr: () => {}, now: () => new Date(), colors: false };
+    expect(await runRecall(['staging', 'login', 'password:', secret], { transcripts: dir, json: true }, io)).toBe(0);
+    expect(stdout).toContain('staging login fail');
+    expect(stdout).not.toContain(secret);
+  });
+});
+
 describe('runRecall', () => {
   it('searches every session of the folder except the current one', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'arricurdai-recall-'));
@@ -217,6 +285,29 @@ describe('handoff with recall', () => {
     const note = (JSON.parse(out[1]!) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext;
     expect(note).toContain('Note from arricurdai on the previous session');
     expect(note).not.toContain('Earlier context');
+  });
+
+  it('hides secrets in the note: requests, open tasks, the last reply and the stopped prompt', () => {
+    const secret = 'Not-A-Real-Pass-42';
+    const dir = mkdtempSync(join(tmpdir(), 'arricurdai-recall-'));
+    writeFileSync(join(dir, 'old.jsonl'), older.join('\n'));
+    const big = { input_tokens: 2, cache_creation_input_tokens: 1_000, cache_read_input_tokens: 299_000, cache_creation: { ephemeral_1h_input_tokens: 1_000 } };
+    const last = join(dir, 'last.jsonl');
+    writeFileSync(last, [
+      user('2026-10-25T09:00:00Z', `Log in to staging, the password: ${secret}`),
+      assistant('2026-10-25T09:04:00Z', [{ type: 'tool_use', id: 't', name: 'TodoWrite', input: { todos: [{ content: `Try ${secret} on staging`, status: 'pending' }] } }]),
+      assistant('2026-10-25T09:05:00Z', [{ type: 'text', text: `Staging works with ${secret}.` }], big),
+    ].join('\n'));
+    const out: string[] = [];
+    const io = (at: string) => ({ stdout: (text: string) => out.push(text), now: () => new Date(at), stateDir: join(dir, 'state'), recallCommand: 'arricurdai recall' });
+
+    runGuard(JSON.stringify({ session_id: 'last', transcript_path: last, cwd: '/repo', prompt: `fatture clienti esteri, password: ${secret}` }), {}, io('2026-10-26T12:00:00Z'));
+    runHandoff(JSON.stringify({ session_id: 'new', transcript_path: join(dir, 'new.jsonl'), cwd: '/repo', source: 'clear' }), io('2026-10-26T12:01:00Z'));
+
+    const note = (JSON.parse(out[1]!) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext;
+    expect(note).toContain('Staging works with [redacted]');
+    expect(note).toContain('Try [redacted] on staging');
+    expect(note).not.toContain(secret);
   });
 
   it('after a compaction, tells the agent how to look up what the summary left out', () => {

@@ -20,6 +20,8 @@ export interface Chunk {
 export interface RecallHit {
   chunk: Chunk;
   score: number;
+  /** The request of the chunk, with its secrets hidden. */
+  request: string;
   /** The share of the query that the excerpt holds, weighting each term by how rare it is: from 0 to 1. */
   coverage: number;
   excerpt: string;
@@ -135,7 +137,10 @@ export function sessionChunks(text: string, sessionId: string): Chunk[] {
   const flush = (): void => {
     if (current) {
       const replies = current.replies.join('\n');
-      const kept = replies.length > MAX_REPLY_CHARS ? replies.slice(-MAX_REPLY_CHARS) : replies;
+      // Cut between lines: a cut inside one could leave a secret here and its key out.
+      const cut = Math.max(replies.length - MAX_REPLY_CHARS, 0);
+      const line = cut === 0 ? -1 : replies.indexOf('\n', cut);
+      const kept = replies.slice(line < 0 ? cut : line + 1);
       chunks.push({ sessionId, timestamp: current.timestamp, request: current.request, text: `${current.request}\n${kept}` });
     }
     current = undefined;
@@ -182,7 +187,7 @@ const SECRET_SHAPES = [
   /\b(?:sk-[\w-]{20,}|x(?:keysib|smtpsib)-[\w-]{20,}|gh[pousr]_\w{30,}|github_pat_\w{30,}|xox[abposr]-[\w-]{10,}|[rs]k_(?:live|test)_\w{16,}|whsec_[\w+/=]{20,}|AKIA[0-9A-Z]{16}|AIza[\w-]{35})/g,
 ];
 /** The password in a URL such as postgresql://user:password@host. */
-const URL_PASSWORD = /(\b[a-z][\w+.-]*:\/\/[^\s:/@]*:)[^\s/@]+(?=@)/gi;
+const URL_PASSWORD = /(\b[a-z][\w+.-]*:\/\/[^\s:/@]*:)([^\s/@]+)(?=@)/gi;
 /** The password after an email, in a pair such as `user@example.com` / `password`. */
 const EMAIL_PASSWORD = /(\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+`?\s*\/\s*`?)([^\s`'"/@,;|]{6,})/g;
 /** A line about passwords, where a value written as code is likely one: `password \`…\``, `password — \`…\``, a list. */
@@ -200,20 +205,42 @@ const NOT_SECRET = /^(?:\p{Ll}\p{L}*|\p{Lu}\p{Ll}+|[\d.,%+-]+|[$~./].*|.*[(].*|.
 /** Tests a value without the punctuation that may close the sentence after it, as in «la password è sbagliata». */
 const notSecret = (value: string): boolean => NOT_SECRET.test(value.replace(/[.,:;!?»”"')\]]+$/u, ''));
 
-/** The text with the secrets it shows replaced by [redacted], so that a search does not bring them back. */
-export function redact(text: string): string {
+/** The text with the secrets it shows replaced by [redacted], so that a search does not bring them back. `found` collects them. */
+export function redact(text: string, found?: Set<string>): string {
+  const hide = (value: string): string => {
+    found?.add(value);
+    return REDACTED;
+  };
   let result = text;
-  for (const shape of SECRET_SHAPES) result = result.replace(shape, REDACTED);
-  result = result.replace(URL_PASSWORD, `$1${REDACTED}`);
-  result = result.replace(EMAIL_PASSWORD, (match, before: string, value: string) => (notSecret(value) ? match : `${before}${REDACTED}`));
-  for (const keyed of KEYED_SECRETS) result = result.replace(keyed, (match, key: string, value: string) => (notSecret(value) ? match : `${key}${REDACTED}`));
+  for (const shape of SECRET_SHAPES) result = result.replace(shape, (match) => hide(match));
+  result = result.replace(URL_PASSWORD, (_match, before: string, value: string) => `${before}${hide(value)}`);
+  result = result.replace(EMAIL_PASSWORD, (match, before: string, value: string) => (notSecret(value) ? match : `${before}${hide(value)}`));
+  for (const keyed of KEYED_SECRETS) result = result.replace(keyed, (match, key: string, value: string) => (notSecret(value) ? match : `${key}${hide(value)}`));
   return result
     .split('\n')
-    .map((line) => (PASSWORD_LINE.test(line) ? line.replace(CODE_VALUE, (match, value: string) => (notSecret(value) || NOT_PASSWORD.test(value) ? match : `\`${REDACTED}\``)) : line))
+    .map((line) => (PASSWORD_LINE.test(line) ? line.replace(CODE_VALUE, (match, value: string) => (notSecret(value) || NOT_PASSWORD.test(value) ? match : `\`${hide(value)}\``)) : line))
     .join('\n');
 }
 
-/** The lines of a chunk around the one that matches the query best: the rarer the terms it shares, the better. */
+/**
+ * A value that can be hidden everywhere: at least 6 characters, with a digit or a symbol next to letters or digits.
+ * Letters alone may be a word, as in postgres://app:postgres@host, and symbols alone a mask or markup, such as ******.
+ */
+const distinctive = (value: string): boolean => value.length >= 6 && /[\p{L}\p{N}]/u.test(value) && /\d|[^\p{L}\p{N}_-]/u.test(value) && !value.includes(REDACTED);
+
+/** The secrets recognized in the chunks that are safe to hide wherever they appear, longest first. */
+export function knownSecrets(chunks: readonly Chunk[]): string[] {
+  const found = new Set<string>();
+  for (const chunk of chunks) redact(chunk.text, found);
+  return [...found].filter(distinctive).sort((a, b) => b.length - a.length);
+}
+
+/** The text with its secrets hidden, and the secrets known from elsewhere, which may appear here with no key next to them. */
+export function hideSecrets(text: string, known: readonly string[]): string {
+  return known.reduce((clean, value) => clean.replaceAll(value, REDACTED), redact(text));
+}
+
+/** The lines of a chunk, with its secrets already hidden, around the one that matches the query best: the rarer the terms it shares, the better. */
 function excerpt(text: string, weights: ReadonlyMap<string, number>): string {
   const lines = text
     .split(/\n+/)
@@ -240,8 +267,8 @@ function excerpt(text: string, weights: ReadonlyMap<string, number>): string {
       grew = true;
     }
   }
-  const text_ = redact(lines.slice(from, to).join('\n'));
-  return text_.length > EXCERPT_CHARS ? `${text_.slice(0, EXCERPT_CHARS)}…` : text_;
+  const shown = lines.slice(from, to).join('\n');
+  return shown.length > EXCERPT_CHARS ? `${shown.slice(0, EXCERPT_CHARS)}…` : shown;
 }
 
 /**
@@ -273,14 +300,16 @@ export function search(chunks: readonly Chunk[], query: string, limit: number, m
     .filter((hit) => hit.score > 0)
     .sort((a, b) => b.score - a.score || String(b.chunk.timestamp).localeCompare(String(a.chunk.timestamp)));
   const total = [...weights.values()].reduce((sum, weight) => sum + weight, 0);
+  const known = knownSecrets(chunks);
   const hits: RecallHit[] = [];
   // Below the threshold it looks further down the ranking, up to ten times the limit.
   for (const hit of ranked.slice(0, minCoverage > 0 ? limit * 10 : limit)) {
-    const shown = excerpt(hit.chunk.text, weights);
+    // The whole chunk first: what makes a secret recognizable may be outside the lines that are shown.
+    const shown = excerpt(hideSecrets(hit.chunk.text, known), weights);
     const held = new Set(terms(shown));
     const coverage = [...weights].reduce((sum, [term, weight]) => sum + (held.has(term) ? weight : 0), 0) / total;
     if (coverage < minCoverage) continue;
-    hits.push({ ...hit, coverage, excerpt: shown });
+    hits.push({ ...hit, request: hideSecrets(hit.chunk.request, known), coverage, excerpt: shown });
     if (hits.length === limit) break;
   }
   return hits;
@@ -296,8 +325,8 @@ export function formatHits(hits: readonly RecallHit[], query: string, sessions: 
   const printed: string[] = [];
   let used = 0;
   for (const hit of hits) {
-    const { timestamp, sessionId, request } = hit.chunk;
-    const what = request ? `request: "${oneLine(redact(request), 120)}"` : 'compaction summary';
+    const { timestamp, sessionId } = hit.chunk;
+    const what = hit.request ? `request: "${oneLine(hit.request, 120)}"` : 'compaction summary';
     const block = `[${printed.length + 1}] ${timestamp?.slice(0, 10) ?? 'undated'} · session ${sessionId.slice(0, 8)} · ${what}\n${hit.excerpt}`;
     if (printed.length > 0 && used + estimateTokens(block) > maxTokens) break;
     printed.push(block);
@@ -342,8 +371,8 @@ export async function runRecall(words: readonly string[], options: RecallCommand
   const { chunks, sessions } = loadChunks(dir, io.env.CLAUDE_CODE_SESSION_ID);
   const hits = search(chunks, query, positive(options.limit, 5));
   if (options.json) {
-    const matches = hits.map(({ chunk, score, excerpt: text }) => ({ sessionId: chunk.sessionId, timestamp: chunk.timestamp, request: redact(chunk.request), score, excerpt: text }));
-    io.stdout(`${JSON.stringify({ query, sessions, matches }, null, 2)}\n`);
+    const matches = hits.map(({ chunk, request, score, excerpt: text }) => ({ sessionId: chunk.sessionId, timestamp: chunk.timestamp, request, score, excerpt: text }));
+    io.stdout(`${JSON.stringify({ query: redact(query), sessions, matches }, null, 2)}\n`);
   } else {
     io.stdout(`${formatHits(hits, query, sessions, positive(options.maxTokens, 1_500))}\n`);
   }

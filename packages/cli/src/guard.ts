@@ -1,7 +1,7 @@
 import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
-import { formatHits, loadChunks, search } from './recall';
+import { formatHits, hideSecrets, knownSecrets, loadChunks, redact, search } from './recall';
 
 // Two Claude Code hooks. `guard` (UserPromptSubmit) stops the first prompt after a pause that let the
 // prompt cache of a large session expire: going on would write the whole context to the cache again.
@@ -204,10 +204,10 @@ export function handoffNote(text: string, cwd: string | undefined, context: numb
   const parts = [
     `Note from arricurdai on the previous session, last active ${lastActive ?? 'at an unknown time'}. It was cleared after a pause so as not to write its ${context.toLocaleString('en-US')} tokens of context to the cache again. Read files again when you need their content.`,
   ];
-  if (prompts.length > 0) parts.push(`Last requests of the user:\n${prompts.slice(-3).map((prompt, index) => `${index + 1}. ${shorten(prompt, 500)}`).join('\n')}`);
+  if (prompts.length > 0) parts.push(`Last requests of the user:\n${prompts.slice(-3).map((prompt, index) => `${index + 1}. ${shorten(redact(prompt), 500)}`).join('\n')}`);
   if (files.size > 0) parts.push(`Files changed: ${[...files].slice(-30).map(([path, edits]) => (edits > 1 ? `${where(path)} (${edits} edits)` : where(path))).join(', ')}`);
-  if (open.length > 0) parts.push(`Open tasks:\n${open.map((todo) => `- [${String(todo.status)}] ${shorten(String(todo.content), 200)}`).join('\n')}`);
-  if (reply !== undefined) parts.push(`Last reply of the assistant:\n${shorten(reply, 2000)}`);
+  if (open.length > 0) parts.push(`Open tasks:\n${open.map((todo) => `- [${String(todo.status)}] ${shorten(redact(String(todo.content)), 200)}`).join('\n')}`);
+  if (reply !== undefined) parts.push(`Last reply of the assistant:\n${shorten(redact(reply), 2000)}`);
   return parts.join('\n\n');
 }
 
@@ -221,12 +221,12 @@ function afterClear(input: HookInput & { transcript_path: string }, io: HookIO):
   if (!(io.now().getTime() - (pending.at ?? 0) < MARKER_MAX_AGE)) return [];
   const note = handoffNote(readFileSync(pending.transcript, 'utf8'), input.cwd, pending.context ?? 0);
   if (!note) return [];
-  const parts = [note];
+  const { chunks, sessions } = loadChunks(dirname(input.transcript_path), input.session_id);
+  const parts = [hideSecrets(note, knownSecrets(chunks))];
   const prompt = pending.prompt?.trim();
   if (prompt) {
-    const { chunks, sessions } = loadChunks(dirname(input.transcript_path), input.session_id);
     const hits = search(chunks, prompt, 3, NOTE_MIN_COVERAGE);
-    if (hits.length > 0) parts.push(`Earlier context that matches the prompt you were about to send:\n${formatHits(hits, shorten(prompt, 80), sessions, 800)}`);
+    if (hits.length > 0) parts.push(`Earlier context that matches the prompt you were about to send:\n${formatHits(hits, shorten(redact(prompt), 80), sessions, 800)}`);
   }
   return parts;
 }
