@@ -157,7 +157,7 @@ Orders over 100 now get 10% off in `applyDiscount()` and the tests pass. Orders 
 
 - 🏆 **After a pause, a new session with a note costs least: 40% less.** It does not write the old context to the cache again, and the agent lost almost nothing: it read two files again, 813 tokens.
 - ⚖️ **Without pauses, starting fresh or compacting costs more than it saves** on contexts this small. That is why the guard acts only after a pause, and only on large sessions.
-- 🔬 **The auto-compact limit never triggered.** The largest context stayed under 100,000 tokens, the smallest window Claude Code accepts. Long sessions need another run.
+- 🔬 **The auto-compact limit never triggered.** The largest context stayed under 100,000 tokens, the smallest window Claude Code accepts. For long sessions, see [the result on one real project](#compare-see-what-changed).
 
 The prompts, the acceptance tests and the scripts are in [`experiments/context`](experiments/context), so anyone can run it again.
 
@@ -674,8 +674,10 @@ On one real project, the cost per call fell 27% after a lower auto-compact windo
 - [x] **The note after `/clear`**: only the passages that match the prompt well
 - [x] **Compaction summaries split on whole lines**, with no secret left apart from its key
 - [x] **`compare`**: what changed after a date, and what the limit and the guard did
-- [ ] Measurements on long real sessions with a lower auto-compact window
 - [x] **An npm package with a setup command**
+- [x] **A first measurement on long real sessions with a lower auto-compact window**, on [one project](#compare-see-what-changed)
+- [ ] `profile` recommends an auto-compact window for your sessions
+- [ ] Measurements on more projects
 
 ## 🧰 Development
 
