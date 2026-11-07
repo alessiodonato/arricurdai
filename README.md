@@ -1,6 +1,11 @@
 <div align="center">
 
-# 🧠 arricurdAI
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/logo-dark.svg">
+  <img src=".github/assets/logo-light.svg" alt="arricurdAI logo" width="120" height="120">
+</picture>
+
+# arricurdAI
 
 ### Stop paying twice for the same context.
 
