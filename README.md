@@ -664,6 +664,8 @@ Limits:
 - **A transcript shows what recall cost, not what it saved.** `Read again` is the closest measure: what reading again what an earlier session had read cost. It shows the price of a smaller context.
 - **Small samples move a lot.** Under 500 calls on a side, one session can change the numbers, and the report says so.
 
+On one real project, the cost per call fell 27% after a lower auto-compact window and the hooks went in. The replays put the later sessions at +41% without the limit and +8% without the guard, so almost all of the saving came from the limit, which is a setting of Claude Code. That is one project, with different work before and after: measure yours.
+
 ## 🧭 Roadmap
 
 - [x] **`profile`**: where the cost goes, and what other compaction policies would have saved
@@ -709,7 +711,7 @@ pnpm test    # type checks and Vitest, for every package
 - 🔎 **`recall`** permette a Claude di cercare nelle sessioni precedenti cosa è stato chiesto, deciso e cambiato.
 - ⚖️ **`compare`** confronta le sessioni prima e dopo una data, e stima quanto hanno contato il limite di compattazione e il guard.
 
-Tutto gira sul tuo computer: nessuna chiamata di rete, nessuna telemetria, nessun modello. Password e chiavi trovate nelle sessioni compaiono come `[redacted]`. Il limite di compattazione è un'impostazione di Claude Code e funziona anche senza arricurdAI: sulle sessioni lunghe può fare da solo gran parte del risparmio. Per installarlo, segui [Get started](#-get-started).
+Tutto gira sul tuo computer: nessuna chiamata di rete, nessuna telemetria, nessun modello. Password e chiavi trovate nelle sessioni compaiono come `[redacted]`. Il limite di compattazione è un'impostazione di Claude Code e funziona anche senza arricurdAI: sulle sessioni lunghe può fare da solo gran parte del risparmio. Su un progetto reale il costo a chiamata è sceso del 27%, quasi tutto per merito del limite: secondo le stime di `compare`, senza limite le stesse sessioni sarebbero costate il 41% in più, senza guard l'8%. Vale per quel progetto, con lavori diversi prima e dopo. Per installarlo, segui [Get started](#-get-started).
 
 <div align="center">
 <br>
