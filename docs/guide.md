@@ -75,8 +75,8 @@ The last part splits the cost of the measured sessions among what made it up, wi
 In long sessions the report adds what compacting at other moments would have saved. The figures are ceilings: after a compaction the agent may read files again, which the replay does not count. If they are large:
 
 - **Before a long break,** run `/compact`, or end the session with a short note and start a new one when you are back.
-- **Keep contexts smaller** with a lower auto-compact window. Run `claude --help` and look for `--autocompact`.
-- **Measure again** a couple of weeks later, and compare the two `--json` reports.
+- **Keep contexts smaller** with a lower auto-compact window: start Claude Code with `CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000 claude`.
+- **Measure again** a couple of weeks later with `arricurdai compare --since <the day you changed it>`: it compares the sessions before and after, and estimates what each change did.
 
 ## 5. Options
 

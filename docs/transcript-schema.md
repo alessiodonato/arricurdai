@@ -51,7 +51,7 @@ These lines form a chain through `uuid` and `parentUuid`. Each one carries:
 | `user` | One of four things. A **prompt**, when `message.content` is a string. **Tool results**, when `message.content` is an array of `tool_result` blocks; the line also has `toolUseResult`. A **meta line**, marked `isMeta: true`. A **compaction summary**, marked `isCompactSummary: true`. |
 | `assistant` | One content block (`thinking`, `text` or `tool_use`) of one API response. A response with three blocks takes three lines with the same `message.id` and the same `usage`. |
 | `attachment` | Context that Claude Code injects, such as memory files, the environment, the date and reminders. `attachment.type` names the kind. `rendered[].content` is the text actually sent, wrapped in `<system-reminder>`. |
-| `system` | Events. `subtype: "compact_boundary"` marks a compaction. `subtype: "turn_duration"` closes an interactive turn. |
+| `system` | Events. `subtype: "compact_boundary"` marks a compaction, and `compactMetadata.trigger` says who started it. `subtype: "turn_duration"` closes an interactive turn. `subtype: "informational"` holds a message shown to the user, such as the stop of a hook. |
 
 ### Metadata lines
 

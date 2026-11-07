@@ -10,6 +10,7 @@ npm install -g arricurdai
 arricurdai profile --project /path/to/your/project   # where the tokens go
 arricurdai setup                                     # turn on the hooks: shows the changes and asks first
 arricurdai recall "invoice vat foreign customers"    # what earlier sessions said
+arricurdai compare --since 2026-10-26                # what changed, and what each part did
 ```
 
 `setup` changes only the `hooks` of `~/.claude/settings.json`, keeps a copy of the old file, and `arricurdai setup --remove` undoes it.

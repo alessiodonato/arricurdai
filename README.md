@@ -36,7 +36,7 @@ arricurdAI shows where your tokens go and keeps the context small, **without los
   <tr>
     <td width="33%" valign="top">
       <h3>📊 See where it goes</h3>
-      <code>profile</code> prices every session and shows the blocks of context that carry the cost, what compacting at other moments would have saved, and the memory lines never used.
+      <code>profile</code> prices every session and shows the blocks of context that carry the cost, what compacting at other moments would have saved, and the memory lines never used. <code>compare</code> shows what changed after a date, and estimates what each part did.
     </td>
     <td width="33%" valign="top">
       <h3>✋ No costly resume</h3>
@@ -231,7 +231,7 @@ Add the hooks to `~/.claude/settings.json`, or to `.claude/settings.local.json` 
 
 > [!TIP]
 > **Two optional settings make it work better.**
-> - **A smaller context:** start Claude Code with `CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000 claude`. The [what if](#what-if) part of the report shows what that would have saved on your sessions, and `recall` finds what a compaction dropped.
+> - **A smaller context:** start Claude Code with `CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000 claude`. This is a setting of Claude Code, and it works without arricurdAI. The [what if](#what-if) part of the report shows what that would have saved on your sessions, and `recall` finds what a compaction dropped.
 > - **A longer history:** Claude Code deletes transcripts after 30 days. Set `"cleanupPeriodDays": 365` in `~/.claude/settings.json`, so that `profile` and `recall` see further back.
 
 New here? The [guide](docs/guide.md) walks through every part of the profile report, and what to do with what it finds.
@@ -270,6 +270,14 @@ The note gives it your last three requests, the files changed, the open tasks, t
 <br>
 
 No. It reads local files only, makes no network call and uses no model. See [Privacy and safety](#-privacy-and-safety).
+
+</details>
+
+<details>
+<summary><b>Do I need arricurdAI to keep the context small?</b></summary>
+<br>
+
+No. A lower auto-compact window is a setting of Claude Code, and on long sessions it can do most of the saving on its own. arricurdAI adds what the setting does not do: `profile` and `compare` show whether it pays off on your sessions, `guard` stops the costly resume after a pause, and `recall` finds what a compaction left out.
 
 </details>
 
@@ -592,6 +600,70 @@ Limits:
 - **It works best with precise words.** It finds names, paths, errors and technical terms well. It does less well with vague questions.
 - **It always prints the best matches it has.** With a vague query, they can be only loosely related.
 
+### Compare: see what changed
+
+Change something, such as the auto-compact window or the hooks, work for a while, then look at what happened:
+
+```sh
+arricurdai compare --since 2026-10-26 --project /path/to/project
+```
+
+It prints numbers only, never the text of a session. An example, with invented numbers:
+
+```text
+                                  Before       After   Change
+Sessions                               3           5
+Calls                              1,200       1,000
+Prompts                               90          80
+Cost per call                     31,000      24,000     −23%
+Cost per prompt                  413,333     300,000     −27%
+Calls per prompt                    13.3        12.5    −6.3%
+Average context                  310,000     110,000     −65%
+Largest context                  720,000     165,000     −77%
+Cache rewrites                        40          12
+Automatic compactions                  1          20
+Compactions you asked for              4           0
+Read again, share of cost          0.10%       0.50%
+
+What each part did on the later sessions
+Estimates: the same calls replayed, as if the work had stayed the same.
+
+As they ran                   24,000,000
+Without the limit             31,200,000        +30%  20 compactions at up to 165,000 left out, window 720,000
+Without the guard             26,400,000        +10%  3 sessions go on from the one stopped
+Without both                  39,600,000        +65%
+Per call, without both            39,600              before: 31,000
+
+What arricurdAI added on the later sessions
+
+Prompts stopped                        5
+Notes and search hint              0.20%  of the cost, 3 notes
+Searches with recall               0.90%  of the cost, 8 searches
+```
+
+The first table compares the two periods. On its own it cannot say why the cost moved, so the second table replays the calls of the later sessions:
+
+- **With nothing taken away, a replay gives back the real cost exactly.** The difference from the real cost is the effect of what was taken away.
+- **Without the limit.** The automatic compactions do not happen. What they dropped stays in the context, every later call reads it, and each cache rewrite writes it again. The context compacts only at the window, by default the largest request of the sessions.
+- **Without the guard.** A session that started from the note goes on from the one stopped: its first call writes the old context to the cache again, and the later calls read it.
+- **Measured on your sessions.** A compaction in a replay costs what your real ones cost, and leaves what they left. It comes to much more than a summary.
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| `--since <date>` | required | The day something changed, such as `2026-10-26`. |
+| `--until <date>` | | Leaves out sessions started from this date on. |
+| `--window <tokens>` | largest request | The auto-compact window of the replays with no limit. |
+| `--json` | | Prints the comparison as JSON. |
+| `--project <path>`, `--transcripts <dir>`, `--config <file>` | | As for `profile`. |
+
+Limits:
+
+- **It is a comparison, not an experiment.** The two periods hold different work. A session counts in the period where it started.
+- **A replay keeps the calls as they were.** It cannot know what the agent would have done with a larger context, or what you would have done: without the guard it assumes you would have sent each stopped prompt in the old session.
+- **Without both is the roughest estimate.** It keeps only the compactions that really happened, and with a growing context you might have asked for more. If its cost per call is far above the one before the date, trust the two estimates above it instead.
+- **A transcript shows what recall cost, not what it saved.** `Read again` is the closest measure: what reading again what an earlier session had read cost. It shows the price of a smaller context.
+- **Small samples move a lot.** Under 500 calls on a side, one session can change the numbers, and the report says so.
+
 ## 🧭 Roadmap
 
 - [x] **`profile`**: where the cost goes, and what other compaction policies would have saved
@@ -599,6 +671,7 @@ Limits:
 - [x] **`recall`**: search earlier sessions locally, with secrets hidden
 - [x] **The note after `/clear`**: only the passages that match the prompt well
 - [x] **Compaction summaries split on whole lines**, with no secret left apart from its key
+- [x] **`compare`**: what changed after a date, and what the limit and the guard did
 - [ ] Measurements on long real sessions with a lower auto-compact window
 - [x] **An npm package with a setup command**
 
@@ -634,8 +707,9 @@ pnpm test    # type checks and Vitest, for every package
 - ✋ **`guard`** ferma il primo messaggio a una sessione grande dopo una pausa, e ti dice quanto costerebbe continuare.
 - 📝 **`handoff`** dà alla sessione nuova, dopo `/clear`, una nota su quella vecchia.
 - 🔎 **`recall`** permette a Claude di cercare nelle sessioni precedenti cosa è stato chiesto, deciso e cambiato.
+- ⚖️ **`compare`** confronta le sessioni prima e dopo una data, e stima quanto hanno contato il limite di compattazione e il guard.
 
-Tutto gira sul tuo computer: nessuna chiamata di rete, nessuna telemetria, nessun modello. Password e chiavi trovate nelle sessioni compaiono come `[redacted]`. Per installarlo, segui [Get started](#-get-started).
+Tutto gira sul tuo computer: nessuna chiamata di rete, nessuna telemetria, nessun modello. Password e chiavi trovate nelle sessioni compaiono come `[redacted]`. Il limite di compattazione è un'impostazione di Claude Code e funziona anche senza arricurdAI: sulle sessioni lunghe può fare da solo gran parte del risparmio. Per installarlo, segui [Get started](#-get-started).
 
 <div align="center">
 <br>
