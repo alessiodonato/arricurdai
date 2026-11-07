@@ -55,7 +55,7 @@ const groupOf = (block: SessionBlock): string => (block.kind === 'tool' ? `tool:
 
 const clamp = (value: number, low: number, high: number): number => Math.min(high, Math.max(low, value));
 
-function median(values: number[]): number | undefined {
+export function median(values: number[]): number | undefined {
   if (values.length === 0) return undefined;
   const sorted = [...values].sort((a, b) => a - b);
   const middle = Math.floor(sorted.length / 2);

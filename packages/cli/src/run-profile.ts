@@ -5,12 +5,16 @@ import { claudeConfigDir, discoverMemoryFiles, encodeProjectPath, findTranscript
 import { loadGitHistory } from './git';
 import { renderReport } from './render';
 
-export interface ProfileCommandOptions {
+/** The options that say which project to read. */
+export interface ProjectOptions {
   project?: string;
-  sessions?: string;
-  json?: boolean;
   config?: string;
   transcripts?: string;
+}
+
+export interface ProfileCommandOptions extends ProjectOptions {
+  sessions?: string;
+  json?: boolean;
 }
 
 /** Everything the command touches outside its arguments, so tests can replace it. */
@@ -70,26 +74,28 @@ function costParams(option: string | undefined, projectRoot: string, cwd: string
   }
 }
 
-/** Builds the report of a project. Throws UserError for problems the user can fix. */
-export async function buildReport(options: ProfileCommandOptions, io: Pick<CommandIO, 'cwd' | 'env' | 'now'>): Promise<Report> {
+/** Finds the project, its transcripts and its cost parameters. Throws UserError for problems the user can fix. */
+export async function resolveProject(options: ProjectOptions, io: Pick<CommandIO, 'cwd' | 'env'>): Promise<{ projectRoot: string; transcripts: string; params: CostParams; claudeDir: string }> {
   const projectRoot = existingFolder(resolve(io.cwd, options.project ?? '.'), 'Project folder');
-  const sessions = sessionWindow(options.sessions);
   const params = costParams(options.config, projectRoot, io.cwd);
   const claudeDir = claudeConfigDir(io.env);
-
-  let transcripts: string;
   if (options.transcripts !== undefined) {
-    transcripts = existingFolder(resolve(io.cwd, options.transcripts), 'Transcript folder');
-  } else {
-    const found = await findTranscriptsDir(projectRoot, claudeDir);
-    if (!found) {
-      throw new UserError(
-        `no Claude Code transcripts found for ${projectRoot}. Expected them in ${join(claudeDir, 'projects', encodeProjectPath(projectRoot))}. ` +
-          'Run Claude Code in this project first, or point at the transcripts with --transcripts <dir>.',
-      );
-    }
-    transcripts = found.dir;
+    return { projectRoot, params, claudeDir, transcripts: existingFolder(resolve(io.cwd, options.transcripts), 'Transcript folder') };
   }
+  const found = await findTranscriptsDir(projectRoot, claudeDir);
+  if (!found) {
+    throw new UserError(
+      `no Claude Code transcripts found for ${projectRoot}. Expected them in ${join(claudeDir, 'projects', encodeProjectPath(projectRoot))}. ` +
+        'Run Claude Code in this project first, or point at the transcripts with --transcripts <dir>.',
+    );
+  }
+  return { projectRoot, params, claudeDir, transcripts: found.dir };
+}
+
+/** Builds the report of a project. Throws UserError for problems the user can fix. */
+export async function buildReport(options: ProfileCommandOptions, io: Pick<CommandIO, 'cwd' | 'env' | 'now'>): Promise<Report> {
+  const { projectRoot, transcripts, params, claudeDir } = await resolveProject(options, io);
+  const sessions = sessionWindow(options.sessions);
 
   const project = await parseProject(transcripts);
   const git = await loadGitHistory(projectRoot, project.sessions[0]?.startedAt);
@@ -107,11 +113,10 @@ export async function buildReport(options: ProfileCommandOptions, io: Pick<Comma
   });
 }
 
-/** Runs `arricurdai profile` and returns the exit code. Never throws. */
-export async function runProfile(options: ProfileCommandOptions, io: CommandIO): Promise<number> {
+/** Runs a command and returns its exit code. Problems the user can fix print as one line. Never throws. */
+export async function withErrors(io: CommandIO, work: () => Promise<void>): Promise<number> {
   try {
-    const report = await buildReport(options, io);
-    io.stdout(options.json ? `${JSON.stringify(report, null, 2)}\n` : renderReport(report, { colors: io.colors, home: io.env.HOME }));
+    await work();
     return 0;
   } catch (error) {
     if (error instanceof UserError) {
@@ -123,4 +128,12 @@ export async function runProfile(options: ProfileCommandOptions, io: CommandIO):
     }
     return 1;
   }
+}
+
+/** Runs `arricurdai profile` and returns the exit code. Never throws. */
+export function runProfile(options: ProfileCommandOptions, io: CommandIO): Promise<number> {
+  return withErrors(io, async () => {
+    const report = await buildReport(options, io);
+    io.stdout(options.json ? `${JSON.stringify(report, null, 2)}\n` : renderReport(report, { colors: io.colors, home: io.env.HOME }));
+  });
 }

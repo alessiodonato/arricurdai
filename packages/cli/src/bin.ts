@@ -3,6 +3,7 @@ import { realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { Command } from 'commander';
 import pc from 'picocolors';
+import { type CompareCommandOptions, runCompare } from './compare';
 import { DEFAULT_MIN_TOKENS, DEFAULT_STATE_DIR, type HookIO, runGuard, runHandoff } from './guard';
 import { type RecallCommandOptions, runRecall } from './recall';
 import { type ProfileCommandOptions, runProfile } from './run-profile';
@@ -24,6 +25,27 @@ program
   .option('--transcripts <dir>', 'transcript folder of the project (default: found from the project path)')
   .action(async (options: ProfileCommandOptions) => {
     process.exitCode = await runProfile(options, {
+      cwd: process.cwd(),
+      env: process.env,
+      stdout: (text) => process.stdout.write(text),
+      stderr: (text) => process.stderr.write(text),
+      now: () => new Date(),
+      colors: pc.isColorSupported,
+    });
+  });
+
+program
+  .command('compare')
+  .description('Compare the sessions of a project before and after a date, and estimate what the limit and the guard did. Reads local files only.')
+  .requiredOption('--since <date>', 'the day something changed, such as 2026-10-26: sessions started from then on are the later ones')
+  .option('--until <date>', 'leave out sessions started from this date on')
+  .option('--window <tokens>', 'auto-compact window of the replays with no limit (default: the largest request of the sessions)')
+  .option('--project <path>', 'project folder', '.')
+  .option('--json', 'print the comparison as JSON')
+  .option('--config <file>', 'cost parameters (default: arricurdai.config.json in the project)')
+  .option('--transcripts <dir>', 'transcript folder of the project (default: found from the project path)')
+  .action(async (options: CompareCommandOptions) => {
+    process.exitCode = await runCompare(options, {
       cwd: process.cwd(),
       env: process.env,
       stdout: (text) => process.stdout.write(text),

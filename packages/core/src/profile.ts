@@ -1,5 +1,5 @@
 import { posix } from 'node:path';
-import { type Breakdown, contextBreakdown, groupLabel, sessionBreakdown } from './breakdown';
+import { type Breakdown, contextBreakdown, groupLabel, median, sessionBreakdown } from './breakdown';
 import { type CostParams, DEFAULT_COST_PARAMS } from './config';
 import { maxSavings, sumUsage, weightedCost } from './cost';
 import { classifyMemoryLines, type MemoryCost, type MemoryDocument, type MemoryLine, memoryLoadCosts } from './memory';
@@ -14,7 +14,7 @@ import {
   type SessionReport,
 } from './report';
 import type { ProfileInput, ProfileSession, SessionContext, SessionMemory } from './session';
-import { type CompactionPolicy, simulateSession } from './simulate';
+import { type CompactionPolicy, simulateSession, type SimulationSizes } from './simulate';
 import { estimateTokens } from './tokens';
 
 export const DEFAULT_SESSION_WINDOW = 20;
@@ -115,20 +115,12 @@ const CAPS = [200_000, 400_000];
 /** Summary size when the sessions have no real compaction to measure. */
 const DEFAULT_SUMMARY_TOKENS = 15_000;
 
-function median(values: number[]): number | undefined {
-  if (values.length === 0) return undefined;
-  const sorted = [...values].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1]! + sorted[middle]!) / 2;
-}
-
-/** Replays the window with compactions before pauses, after pauses, and under a few context sizes. */
-function whatIf(measures: readonly SessionMeasure[], params: CostParams): Report['whatIf'] {
-  const total = sum(measures.map((measure) => measure.report.cost));
-  const summaries = measures.flatMap((measure) => measure.breakdown.items.filter((item) => item.group === 'summary').map((item) => item.tokens));
+/** What a compaction keeps, measured on these breakdowns: the median summary, and the prefix of each context. */
+export function compactionSizes(breakdowns: readonly Breakdown[], params: CostParams): { summaryTokens: number; sizes: (context: SessionContext) => SimulationSizes } {
+  const summaries = breakdowns.flatMap((breakdown) => breakdown.items.filter((item) => item.group === 'summary').map((item) => item.tokens));
   const summaryTokens = Math.round(median(summaries) ?? DEFAULT_SUMMARY_TOKENS);
   const prefixes = new Map<SessionContext, number>();
-  const sizes = (context: SessionContext) => {
+  const sizes = (context: SessionContext): SimulationSizes => {
     let prefixTokens = prefixes.get(context);
     if (prefixTokens === undefined) {
       prefixTokens = contextBreakdown(context, params).items.find((item) => item.group === 'prefix' && item.turn === 1)?.tokens ?? 0;
@@ -136,6 +128,13 @@ function whatIf(measures: readonly SessionMeasure[], params: CostParams): Report
     }
     return { prefixTokens, summaryTokens };
   };
+  return { summaryTokens, sizes };
+}
+
+/** Replays the window with compactions before pauses, after pauses, and under a few context sizes. */
+function whatIf(measures: readonly SessionMeasure[], params: CostParams): Report['whatIf'] {
+  const total = sum(measures.map((measure) => measure.report.cost));
+  const { summaryTokens, sizes } = compactionSizes(measures.map((measure) => measure.breakdown), params);
 
   const largest = Math.max(0, ...measures.flatMap(({ session }) =>
     [session.main, ...session.subagents].flatMap((context) => context.calls.map((call) => call.usage.input + call.usage.cacheWrite + call.usage.cacheRead))));

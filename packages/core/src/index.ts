@@ -1,4 +1,5 @@
 export { contextBreakdown, contextShape, groupLabel, sessionBreakdown, type Breakdown, type ContextShape, type CostItem } from './breakdown';
+export { comparePeriods, RECALL_LABEL, type CompareOptions, type CompareScenario, type Comparison, type PeriodMeasures } from './compare';
 export { ConfigError, costParamsSchema, DEFAULT_COST_PARAMS, parseCostParams, type CostParams } from './config';
 export {
   loadNowThreshold,
@@ -26,7 +27,17 @@ export {
 } from './memory';
 export { DEFAULT_SESSION_WINDOW, profile, type DiskMemoryFile, type ProfileOptions } from './profile';
 export { judgeReads, turnsInContext, type ChangeOracle, type ReadVerdict } from './rediscovery';
-export { simulateContext, simulateSession, type CompactionPolicy, type Simulation, type SimulationSizes } from './simulate';
+export {
+  replayContext,
+  replaySession,
+  simulateContext,
+  simulateSession,
+  type CompactionPolicy,
+  type Replay,
+  type ReplayOptions,
+  type Simulation,
+  type SimulationSizes,
+} from './simulate';
 export {
   costBlockSchema,
   costGroupSchema,

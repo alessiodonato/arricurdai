@@ -1,3 +1,4 @@
+import { RECALL_LABEL } from '@arricurdai/core';
 import { relativeToRoot } from './reads';
 import { resolvePath } from './shell';
 
@@ -17,6 +18,9 @@ export function toolGroup(name: string): string {
   return name;
 }
 
+/** A search of earlier sessions, from the package or from a checkout, whatever the path before it. */
+const RECALL_COMMAND = /arricurdai[^\s"']*\/bin\.js["']?\s+recall\b|(?:^|[\s/])arricurdai\s+recall\b/i;
+
 /**
  * A short label for a tool call: the tool and what it worked on, such as `Read src/app.ts` or
  * `Bash: npm test`. It never contains the result, and a command is cut to one short line.
@@ -34,8 +38,10 @@ export function toolLabel(name: string, input: Record<string, unknown>, cwd: str
       return `${name} ${path('file_path') ?? ''}`.trim();
     case 'NotebookEdit':
       return `${name} ${path('notebook_path') ?? ''}`.trim();
-    case 'Bash':
-      return `Bash: ${oneLine(text(input.command) ?? '', 70)}`;
+    case 'Bash': {
+      const command = text(input.command) ?? '';
+      return RECALL_COMMAND.test(command) ? RECALL_LABEL : `Bash: ${oneLine(command, 70)}`;
+    }
     case 'Grep':
     case 'Glob':
       return `${name} ${oneLine(text(input.pattern) ?? '', 60)}`.trim();

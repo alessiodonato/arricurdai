@@ -55,6 +55,8 @@ export interface SessionContext {
   calls: readonly { usage: Usage }[];
   /** For each compaction, the number of calls before it. */
   compactions: readonly number[];
+  /** The entries of `compactions` that Claude Code started on its own, at its auto-compact window. */
+  autoCompactions?: readonly number[];
   reads: readonly SessionRead[];
   memory: readonly SessionMemory[];
   /** Every block that entered the context, in order. */
@@ -82,6 +84,10 @@ export interface ProfileSession {
   unrecordedUsage: Usage | undefined;
   /** The transcript records which memory files were loaded (attachment lines). */
   recordsMemory: boolean;
+  /** Prompts the guard stopped in this session. */
+  guardStops?: number;
+  /** The session started from the note the handoff hook gives after a stop. */
+  startedFromNote?: boolean;
 }
 
 export interface LineStatsInput {

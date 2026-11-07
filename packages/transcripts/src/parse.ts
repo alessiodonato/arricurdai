@@ -66,7 +66,17 @@ const memoryFile = z.object({ path: z.string(), type: z.string(), content: z.str
 const instructionsAttachment = z.object({ files: z.array(memoryFile) });
 const nestedMemoryAttachment = z.object({ content: memoryFile });
 
-const systemLine = z.object({ ...lineFields, subtype: z.string().optional() });
+const systemLine = z.object({
+  ...lineFields,
+  subtype: z.string().optional(),
+  content: z.unknown().optional(),
+  compactMetadata: z.object({ trigger: z.string().optional() }).optional(),
+});
+
+/** How the first line of a stop of the guard starts, as the transcript of the stopped session keeps it. */
+export const GUARD_STOP = 'arricurdai: this session was idle';
+/** How the note of the handoff hook starts. */
+export const HANDOFF_NOTE = 'Note from arricurdai on the previous session';
 
 const costStateLine = z.object({
   modelUsage: z.record(
@@ -177,7 +187,7 @@ function newContext(kind: Context['kind'], agentId?: string): ContextState {
   return {
     context: {
       kind, agentId, agentType: undefined, parentToolUseId: undefined,
-      calls: [], compactions: [], reads: [], memory: [], blocks: [], cacheTtl: '5m',
+      calls: [], compactions: [], autoCompactions: [], reads: [], memory: [], blocks: [], cacheTtl: '5m',
     },
     callIndexById: new Map(),
     pending: new Map(),
@@ -193,6 +203,8 @@ class SessionParser {
   readonly agentText: string[] = [];
   readonly versions = new Set<string>();
   recordsMemory = false;
+  guardStops = 0;
+  startedFromNote = false;
   costState: Usage | undefined;
   entrypoint: string | undefined;
   startedAt: string | undefined;
@@ -416,6 +428,9 @@ class SessionParser {
       state.context.memory.push({ ...file, tokens, source: 'nested', turn, timestamp: line.timestamp });
       memoryBlock(file.path, tokens);
     } else {
+      if (subagentId === undefined && line.attachment.type === 'hook_additional_context' && JSON.stringify(raw.attachment).includes(HANDOFF_NOTE)) {
+        this.startedFromNote = true;
+      }
       // Other attachments reach the model only through their rendered text.
       const rendered = (line.rendered ?? []).map((part) => part.content).join('\n');
       const tokens = estimateTokens(rendered);
@@ -430,7 +445,13 @@ class SessionParser {
     const parsed = systemLine.safeParse(raw);
     if (!parsed.success) return false;
     const state = this.enter(parsed.data, subagentId);
-    if (parsed.data.subtype === 'compact_boundary') state.context.compactions.push(state.context.calls.length);
+    if (parsed.data.subtype === 'compact_boundary') {
+      state.context.compactions.push(state.context.calls.length);
+      if (parsed.data.compactMetadata?.trigger === 'auto') state.context.autoCompactions.push(state.context.calls.length);
+    }
+    if (subagentId === undefined && parsed.data.subtype === 'informational' && typeof parsed.data.content === 'string' && parsed.data.content.includes(GUARD_STOP)) {
+      this.guardStops++;
+    }
     return true;
   }
 
@@ -514,6 +535,8 @@ export async function parseSession(files: SessionFiles, options: ParseOptions = 
     costState: parser.costState,
     unrecordedUsage,
     recordsMemory: parser.recordsMemory,
+    guardStops: parser.guardStops,
+    startedFromNote: parser.startedFromNote,
     stats: parser.stats,
   };
 }

@@ -70,6 +70,8 @@ export interface Context extends SessionContext {
   calls: Call[];
   /** For each compaction, the number of calls before it. */
   compactions: number[];
+  /** The entries of `compactions` that Claude Code started on its own. */
+  autoCompactions: number[];
   reads: ContextRead[];
   memory: MemoryLoad[];
   /** Every block that entered the context, in order, for the cost breakdown. */
@@ -114,6 +116,10 @@ export interface ParsedSession extends ProfileSession {
   unrecordedUsage: Usage | undefined;
   /** The main transcript has attachment lines, so it records which memory files were loaded. */
   recordsMemory: boolean;
+  /** Prompts the guard stopped in this session. */
+  guardStops: number;
+  /** The session started from the note the handoff hook gives after a stop. */
+  startedFromNote: boolean;
   stats: LineStats;
 }
 

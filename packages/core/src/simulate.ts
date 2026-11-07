@@ -97,3 +97,94 @@ export function simulateSession(
     compactions: parts.reduce((total, part) => total + part.compactions, 0),
   };
 }
+
+export interface ReplayOptions {
+  /** Auto-compact window of the replay: an automatic compaction under it does not happen, and over it the context compacts. */
+  window: number;
+  /** Tokens of an earlier session that this one goes on from, instead of starting new. */
+  carried?: number;
+  /** The window is the real one: a real automatic compaction stays, unless the replay is smaller than the real context there. */
+  keepsLimit?: boolean;
+  /** What a compaction costs, when there are real ones to measure it on. Default: reading the context and writing the summary. */
+  compactionCost?: number;
+}
+
+export interface Replay {
+  simulated: number;
+  /** Compactions the window added. */
+  compactions: number;
+  /** Real automatic compactions the replay left out. */
+  skipped: number;
+  /** Size of the last request of the replay. */
+  finalSize: number;
+}
+
+/**
+ * Replays a context with another auto-compact window, or as the continuation of an earlier session.
+ * It is the opposite of `simulateContext`, which only takes tokens away: here the tokens stay.
+ *
+ * The context of the replay differs from the real one by a number of tokens, positive or negative.
+ * Where an automatic compaction is left out, what it dropped stays, and the next call reads it all
+ * from the cache and writes nothing. Each later call reads the tokens kept, or writes them when its
+ * cache had expired. The real compactions the user asked for and the rewinds happen as they did.
+ * With the real window and nothing carried, the replay is the context as it ran.
+ *
+ * Not counted: what the agent would have done differently with more or less context. The call after
+ * a compaction left out writes nothing, though it would write the new prompt, so the replay leans
+ * towards a lower cost.
+ */
+export function replayContext(context: SessionContext, params: CostParams, options: ReplayOptions, sizes: SimulationSizes): Replay {
+  const shape = contextShape(context);
+  const automatic = new Set(context.autoCompactions ?? []);
+  const write = writeMultiplier(context.cacheTtl, params);
+  const kept = sizes.prefixTokens + sizes.summaryTokens;
+  let extra = options.carried ?? 0;
+  let simulated = 0;
+  let compactions = 0;
+  let skipped = 0;
+
+  for (let turn = 1; turn <= shape.turns; turn++) {
+    const usage = context.calls[turn - 1]!.usage;
+    const before = turn > 1 ? shape.size(turn - 1) + extra : 0;
+
+    const leftOut = turn > 1 && automatic.has(turn - 1) && (options.keepsLimit ? extra < 0 : before <= options.window);
+    if (leftOut) {
+      extra = before - shape.size(turn);
+      skipped++;
+      simulated += usage.input + params.r * before + params.mu * usage.output;
+      continue;
+    }
+    if (turn > 1 && shape.startsSegment(turn)) {
+      extra = 0;
+    } else if (turn > 1 && (!options.keepsLimit || extra > 0) && shape.size(turn) + extra > options.window && before > kept) {
+      const compaction = options.compactionCost ?? params.r * before + params.mu * sizes.summaryTokens;
+      simulated += compaction + (write - params.r) * sizes.summaryTokens;
+      extra = kept - shape.size(turn - 1);
+      compactions++;
+    }
+
+    const cold = turn === 1 ? extra > 0 : shape.rebuilt(turn) > 0;
+    const added = Math.max(0, extra);
+    const removed = Math.max(0, -extra);
+    const cached = Math.max(0, usage.cacheRead - removed) + (cold ? 0 : added);
+    const written = Math.max(0, usage.cacheWrite - Math.max(0, removed - usage.cacheRead)) + (cold ? added : 0);
+    const writePrice = usage.cacheWrite > 0 ? (writtenCost(usage, params) - usage.input) / usage.cacheWrite : write;
+    simulated += usage.input + writePrice * written + params.r * cached + params.mu * usage.output;
+  }
+
+  return { simulated, compactions, skipped, finalSize: shape.turns === 0 ? 0 : shape.size(shape.turns) + extra };
+}
+
+/** A session replayed: its main context, its subagents as they ran, and the cost of the compactions that still happen. */
+export function replaySession(
+  session: ProfileSession,
+  params: CostParams,
+  options: ReplayOptions,
+  sizes: (context: SessionContext) => SimulationSizes,
+): Replay {
+  const main = replayContext(session.main, params, options, sizes(session.main));
+  const subagents = session.subagents.reduce((total, context) => total + context.calls.reduce((sum, call) => sum + weightedCost(call.usage, params), 0), 0);
+  const real = session.main.compactions.length;
+  const unrecorded = session.unrecordedUsage ? weightedCost(session.unrecordedUsage, params) : 0;
+  return { ...main, simulated: main.simulated + subagents + unrecorded * (real === 0 ? 1 : (real - main.skipped) / real) };
+}
