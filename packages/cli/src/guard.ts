@@ -37,7 +37,7 @@ const MARKER_MAX_AGE = 12 * HOUR;
 /** The share of the stopped prompt that a passage must hold to enter the note: below it, a passage is mostly noise. */
 const NOTE_MIN_COVERAGE = 0.4;
 /** Input price in USD per million tokens, measured from the costs Claude Code records. */
-const INPUT_PRICE: Record<string, number> = { 'claude-opus-5-5': 4, 'claude-sonnet-5-5': 2 };
+export const INPUT_PRICE: Record<string, number> = { 'claude-opus-5-5': 4, 'claude-sonnet-5-5': 2 };
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 
 interface Entry {
@@ -104,7 +104,7 @@ export function lastCall(text: string): LastCall | undefined {
   return last && { ...last, ttlMs: HOUR };
 }
 
-function duration(ms: number): string {
+export function duration(ms: number): string {
   const minutes = Math.round(ms / 60_000);
   return minutes < 60 ? `${minutes}m` : `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
@@ -123,7 +123,7 @@ export function guardMessage(call: LastCall, now: number, minTokens: number): st
   ].join('\n');
 }
 
-function readTail(path: string): string {
+export function readTail(path: string): string {
   const fd = openSync(path, 'r');
   try {
     const size = fstatSync(fd).size;

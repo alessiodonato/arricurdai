@@ -97,6 +97,7 @@ Claude Code resends everything it has read and said so far on every call. The pr
 | [`guard`](#guard-no-cache-rewrite-after-a-pause) | Hook, on every prompt | When the cache of a session over 100,000 tokens has expired, it stops your first prompt once and says what going on would cost. |
 | [`handoff`](#guard-no-cache-rewrite-after-a-pause) | Hook, when a session starts | After `/clear`, a note on the old session. In every session, one line on how to run `recall`. |
 | [`recall`](#recall-find-what-earlier-sessions-said) | Run by Claude | Searches the earlier sessions of the project, locally and without a model. |
+| [`status`](#status-your-sessions-at-a-glance) | When you run it, or every minute in the menu bar | The sessions of the last hours, how large their context is and when their cache expires. |
 
 <details>
 <summary><b>📝 See the note a fresh session receives</b></summary>
@@ -245,7 +246,7 @@ New here? The [guide](docs/guide.md) walks through every part of the profile rep
 
 > [!IMPORTANT]
 > - **Nothing leaves your machine.** arricurdAI reads the transcripts and runs `git log` locally. No network calls, no telemetry, no model. Each package has a test that fails if the package imports a module outside a short allowed list, so a network module cannot slip in.
-> - **It only reads.** `profile`, `recall` and the hooks read the transcripts and change nothing. The guard keeps one small state file in the system's temporary folder. `setup` is the one command that writes: only the hooks in your Claude Code settings, after showing you the changes and keeping a copy of the file.
+> - **It only reads.** `profile`, `compare`, `status`, `recall` and the hooks read the transcripts and change nothing. The guard keeps one small state file in the system's temporary folder. `setup` is the one command that writes: only the hooks in your Claude Code settings, after showing you the changes and keeping a copy of the file.
 > - **The hooks never trap you.** On any problem they let the prompt through, and the guard stops a prompt only once: send it again to go on.
 > - **Secrets stay hidden.** Passwords, API keys, tokens and the passwords in connection strings print as `[redacted]`, so a search does not carry them into a new session.
 
@@ -671,6 +672,45 @@ Limits:
 
 On one real project, the cost per call fell 27% after a lower auto-compact window and the hooks went in. The replays put the later sessions at +41% without the limit and +8% without the guard, so almost all of the saving came from the limit, which is a setting of Claude Code. That is one project, with different work before and after: measure yours.
 
+### Status: your sessions at a glance
+
+`arricurdai status` lists the Claude Code sessions of every project that ran in the last 24 hours: how large their context is, and when their prompt cache expires. The last line says what today cost at API prices and how many prompts the guard stopped. It reads only the start and the end of each transcript, and prints numbers and folder names, never the text of a session.
+
+```text
+Claude Code sessions of the last 24 hours
+
+  shop-api    312,000 tokens   cache expires in 40m
+  blog         88,000 tokens   cache expired 1h 0m ago
+  docs-site   140,000 tokens   cache expired 3h 0m ago: the guard stops the next prompt
+
+Today: about $0.14 at API prices over 3 calls, 1 stop of the guard.
+```
+
+The numbers are invented. On a Pro or Max plan you do not pay these prices: read the cost as a rough gauge of how heavy the day was.
+
+#### In the macOS menu bar
+
+With [SwiftBar](https://github.com/swiftbar/SwiftBar) or [xbar](https://xbarapp.com), the menu bar counts down to the moment the cache of your largest live session expires, and turns orange in the last ten minutes. The menu lists every session, with a command to profile its project. Save this as `arricurdai.1m.sh` in the plugin folder, and run `chmod +x arricurdai.1m.sh`:
+
+```sh
+#!/bin/bash
+# <xbar.title>arricurdAI</xbar.title>
+# <xbar.desc>Claude Code sessions: how large their context is and when their prompt cache expires. Local files only.</xbar.desc>
+# <xbar.dependencies>node,arricurdai</xbar.dependencies>
+export PATH="/usr/local/bin:/opt/homebrew/bin:$PATH"
+exec arricurdai status --swiftbar
+```
+
+The `1m` in the name refreshes it every minute.
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| `--hours <n>` | 24 | Sessions active in the last n hours. |
+| `--limit <n>` | 10 | Most sessions to show. |
+| `--min-tokens <n>` | 100,000 | Smallest context the guard stops for, as in `guard --min-tokens`. |
+| `--json` | | The status as JSON. |
+| `--swiftbar` | | The status as a SwiftBar or xbar menu. |
+
 ## 🧭 Roadmap
 
 - [x] **`profile`**: where the cost goes, and what other compaction policies would have saved
@@ -680,6 +720,7 @@ On one real project, the cost per call fell 27% after a lower auto-compact windo
 - [x] **Compaction summaries split on whole lines**, with no secret left apart from its key
 - [x] **`compare`**: what changed after a date, and what the limit and the guard did
 - [x] **An npm package with a setup command**
+- [x] **`status`**: the sessions of the last hours, also in the macOS menu bar
 - [x] **A first measurement on long real sessions with a lower auto-compact window**, on [one project](#compare-see-what-changed)
 - [ ] `profile` recommends an auto-compact window for your sessions
 - [ ] Measurements on more projects
@@ -717,6 +758,7 @@ pnpm test    # type checks and Vitest, for every package
 - 📝 **`handoff`** dà alla sessione nuova, dopo `/clear`, una nota su quella vecchia.
 - 🔎 **`recall`** permette a Claude di cercare nelle sessioni precedenti cosa è stato chiesto, deciso e cambiato.
 - ⚖️ **`compare`** confronta le sessioni prima e dopo una data, e stima quanto hanno contato il limite di compattazione e il guard.
+- 🕒 **`status`** mostra le sessioni delle ultime ore, quanto è grande il loro contesto e quando scade la cache. Con SwiftBar o xbar lo vedi nella barra dei menu del Mac.
 
 Tutto gira sul tuo computer: nessuna chiamata di rete, nessuna telemetria, nessun modello. Password e chiavi trovate nelle sessioni compaiono come `[redacted]`. Il limite di compattazione è un'impostazione di Claude Code e funziona anche senza arricurdAI: sulle sessioni lunghe può fare da solo gran parte del risparmio. Su un progetto reale il costo a chiamata è sceso del 27%, quasi tutto per merito del limite: secondo le stime di `compare`, senza limite le stesse sessioni sarebbero costate il 41% in più, senza guard l'8%. Vale per quel progetto, con lavori diversi prima e dopo. Per installarlo, segui [Get started](#-get-started).
 

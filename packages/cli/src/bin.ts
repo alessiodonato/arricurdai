@@ -8,6 +8,7 @@ import { DEFAULT_MIN_TOKENS, DEFAULT_STATE_DIR, type HookIO, runGuard, runHandof
 import { type RecallCommandOptions, runRecall } from './recall';
 import { type ProfileCommandOptions, runProfile } from './run-profile';
 import { runSetup, type SetupOptions } from './setup';
+import { runStatus, type StatusCommandOptions } from './status';
 
 const { version } = createRequire(import.meta.url)('../package.json') as { version: string };
 
@@ -52,6 +53,27 @@ program
       stderr: (text) => process.stderr.write(text),
       now: () => new Date(),
       colors: pc.isColorSupported,
+    });
+  });
+
+program
+  .command('status')
+  .description('Show the Claude Code sessions of the last hours: how large their context is and when their prompt cache expires. Reads local files only.')
+  .option('--hours <n>', 'sessions active in the last n hours', '24')
+  .option('--limit <n>', 'most sessions to show', '10')
+  .option('--min-tokens <n>', 'smallest context the guard stops for', String(DEFAULT_MIN_TOKENS))
+  .option('--json', 'print the status as JSON')
+  .option('--swiftbar', 'print the status as a SwiftBar or xbar menu, for the macOS menu bar')
+  .action(async (options: StatusCommandOptions) => {
+    process.exitCode = await runStatus(options, {
+      cwd: process.cwd(),
+      env: process.env,
+      stdout: (text) => process.stdout.write(text),
+      stderr: (text) => process.stderr.write(text),
+      now: () => new Date(),
+      colors: false,
+      node: process.execPath,
+      bin: realpathSync(process.argv[1] ?? ''),
     });
   });
 
