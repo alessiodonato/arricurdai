@@ -1,6 +1,6 @@
 {
   "name": "arricurdai",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Shows where the tokens of a Claude Code project go, stops costly resumes, and finds what earlier sessions said. Local files only.",
   "license": "Apache-2.0",
   "repository": {
