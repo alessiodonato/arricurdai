@@ -362,7 +362,7 @@ footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; g
 </header>
 
 <section class="wrap stats" aria-label="Key numbers">
-  <div class="stat reveal"><b>0.05×</b><p>the input price, to read a token from the cache on Claude 5 models.</p></div>
+  <div class="stat reveal"><b>0.05×</b><p>the input price, to read a token from the cache on Claude Opus 5.5 and Sonnet 5.5.</p></div>
   <div class="stat reveal"><b>2×</b><p>the input price, to write the whole context again once the one-hour cache expires.</p></div>
   <div class="stat reveal"><b>−40%</b><p>cost of a new session with a note, against one long session, with a pause before each step.</p></div>
   <div class="stat reveal"><b>0</b><p>network calls. It reads local files, sends no telemetry and uses no model.</p></div>
@@ -403,8 +403,9 @@ footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; g
     <div class="controls">
       <label for="model">Model
         <select id="model">
-          <option value="4" selected>Opus 5.5: $4 per million input tokens</option>
-          <option value="2">Sonnet 5.5: $2 per million input tokens</option>
+          <option value="8" data-read="0.025">Fable 5.2: $8 per million input tokens</option>
+          <option value="4" data-read="0.05" selected>Opus 5.5: $4 per million input tokens</option>
+          <option value="2" data-read="0.05">Sonnet 5.5: $2 per million input tokens</option>
         </select>
       </label>
       <label for="ctx"><span class="label-row">Context of the session <output id="ctxOut" for="ctx"></output></span>
@@ -475,7 +476,7 @@ footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; g
     <ul class="findings reveal">
       <li><b>Context size and pauses are what cost</b><span>Reading a large context on every call, and writing it again after a pause, outweigh everything else in long sessions.</span></li>
       <li><b>Rediscovery is cheap</b><span>On three public repositories, re-reading what the agent already knew was 4–6% of the tokens. Better memory alone could save at most 1.2%.</span></li>
-      <li><b>Prices from the source</b><span>On Claude 5 models a cache read costs 0.05 of an input token, not 0.1, as the costs Claude Code records show.</span></li>
+      <li><b>Prices from the source</b><span>On Claude Opus 5.5 and Sonnet 5.5 a cache read costs 0.05 of an input token, not 0.1, as the costs Claude Code records show.</span></li>
     </ul>
   </div>
 </section>
@@ -529,7 +530,9 @@ arricurdai profile --project /path/to/project</code></pre></div>
     <article class="card phase done reveal"><span class="status">✓ Done</span><h3>Profile</h3><p>The price-weighted cost of every session, where it goes, and what other compaction policies would have saved.</p></article>
     <article class="card phase done reveal"><span class="status">✓ Done</span><h3>Guard and handoff</h3><p>No cache rewrite after a pause: a new session with a note, chosen by you.</p></article>
     <article class="card phase done reveal"><span class="status">✓ Done</span><h3>Recall</h3><p><code>arricurdai recall "&lt;words&gt;"</code> searches past sessions, locally and without a model. The agent can keep a small context and still find what was decided.</p></article>
-    <article class="card phase next reveal"><span class="status">✓ New</span><h3>Compare</h3><p><code>arricurdai compare --since &lt;date&gt;</code> compares the sessions before and after a change, and replays them to estimate what the auto-compact limit and the guard each did.</p></article>
+    <article class="card phase done reveal"><span class="status">✓ Done</span><h3>Compare</h3><p><code>arricurdai compare --since &lt;date&gt;</code> compares the sessions before and after a change, and replays them to estimate what the auto-compact limit and the guard each did.</p></article>
+    <article class="card phase done reveal"><span class="status">✓ Done</span><h3>Status</h3><p><code>arricurdai status</code> lists the sessions of the last hours: how large their context is, when their cache expires, and what today cost. Also in the macOS menu bar.</p></article>
+    <article class="card phase next reveal"><span class="status">✓ New</span><h3>A quicker recall</h3><p>It reads each transcript once and keeps what it read in a private cache, so a search takes a fraction of a second. A pasted prompt counts as a request, and a passage is shown once.</p></article>
   </div>
 </section>
 
@@ -555,12 +558,15 @@ arricurdai profile --project /path/to/project</code></pre></div>
   const tokens = (n) => n.toLocaleString('en-US') + ' tokens';
   const usd = (n) => '$' + n.toFixed(2);
   function calculate() {
-    const price = Number($('model').value) / 1e6;
+    const model = $('model').selectedOptions[0];
+    const price = Number(model.value) / 1e6;
+    // A cache read costs a share of the input price, and the share is not the same for every model.
+    const read = Number(model.dataset.read);
     const context = Number($('ctx').value);
     const calls = Number($('calls').value);
     const start = Number($('start-size').value);
-    const goOn = (context * 2 + calls * context * 0.05) * price;
-    const fresh = (start * 2 + calls * start * 0.05) * price;
+    const goOn = (context * 2 + calls * context * read) * price;
+    const fresh = (start * 2 + calls * start * read) * price;
     $('ctxOut').textContent = tokens(context);
     $('callsOut').textContent = String(calls);
     $('startOut').textContent = tokens(start);
@@ -573,7 +579,7 @@ arricurdai profile --project /path/to/project</code></pre></div>
       ? 'You save <strong>' + usd(goOn - fresh) + ' (' + Math.round((1 - fresh / goOn) * 100) + '%)</strong>'
       : 'Nothing to save: the session is small.';
     $('explain').textContent = 'Going on writes ' + tokens(context) + ' to the cache again (' + usd(context * 2 * price)
-      + '), then every call reads them (' + usd(context * 0.05 * price) + ' each). A new session writes ' + tokens(start)
+      + '), then every call reads them (' + usd(context * read * price) + ' each). A new session writes ' + tokens(start)
       + ' and reads only those.';
   }
   ['model', 'ctx', 'calls', 'start-size'].forEach((id) => $(id).addEventListener('input', calculate));

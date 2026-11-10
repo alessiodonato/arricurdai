@@ -32,7 +32,7 @@ The report has three parts.
 | Line | What it means |
 | --- | --- |
 | Sessions analyzed | How many sessions were measured, and the dates of the first and the last. |
-| Mean cost K | The average cost of a session in price-weighted tokens. Every token counts at its own price, relative to an input token: cache writes 1.25× or 2×, cache reads 0.05× (Claude 5 models), output 5×. To get money, multiply by your model's price per input token. At 2 USD per million input tokens (Sonnet 5.5), a K of 55,728 is about 0.11 USD. |
+| Mean cost K | The average cost of a session in price-weighted tokens. Every token counts at its own price, relative to an input token: cache writes 1.25× or 2×, cache reads 0.05× (Claude Opus 5.5 and Sonnet 5.5; other models differ, and `r` in the config sets it), output 5×. To get money, multiply by your model's price per input token. At 2 USD per million input tokens (Sonnet 5.5), a K of 55,728 is about 0.11 USD. |
 | Read from cache | The share of input tokens served from the prompt cache. A high share is normal and cheap. |
 | Rediscovery | The share of the tokens read as context (files, searches, listings) that the agent had already read in an earlier session, with nothing changed since. |
 | S_max | What that rediscovery cost, as a share of all the spend. A memory that removes it would save at most this much. It is a ceiling, not a promise. |

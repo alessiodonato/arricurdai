@@ -464,7 +464,7 @@ The parameters live in `arricurdai.config.json`, in the project or wherever `--c
 | --- | --- | --- |
 | `w` | 1.25 | Price of writing to the 5-minute cache. |
 | `w1h` | 2 | Price of writing to the 1-hour cache. |
-| `r` | 0.05 | Price of reading from the cache: 0.05 for Claude 5 models, as the costs Claude Code records show. Set 0.1 for older models. |
+| `r` | 0.05 | Price of reading from the cache: 0.05 for Claude Opus 5.5 and Sonnet 5.5, as the costs Claude Code records show. Set 0.025 for Claude Fable 5.2, and 0.1 for Claude Opus 5, the Haiku models and older ones: the [table of prices](#status-your-sessions-at-a-glance) has them all. |
 | `mu` | 5 | Price of an output token. |
 | `overhead` | 300 | Tokens of one extra round trip: the tool call, its result and the reply. |
 
@@ -692,6 +692,19 @@ Today: about $0.14 at API prices over 3 calls, 1 stop of the guard.
 
 The numbers are invented. On a Pro or Max plan you do not pay these prices: read the cost as a rough gauge of how heavy the day was.
 
+The guard and `status` know the price of these models, each with its own price for cache reads:
+
+| Model | Input, per million tokens | Cache read, as a share of input |
+| --- | --- | --- |
+| Claude Fable 5.2 | $8 | 2.5% |
+| Claude Opus 5.5 | $4 | 5% |
+| Claude Opus 5 | $5 | 10% |
+| Claude Sonnet 5.5 | $2 | 5% |
+| Claude Haiku 5.5 | $0.10 | 10% |
+| Claude Haiku 4.5 | $1 | 10% |
+
+They are measured from the costs Claude Code records in the transcripts, except Claude Fable 5.2, which takes its published price. The calls of any other model are counted, and left out of the cost: the guard then stops the prompt without a figure.
+
 #### In the macOS menu bar
 
 With [SwiftBar](https://github.com/swiftbar/SwiftBar) or [xbar](https://xbarapp.com), the menu bar counts down to the moment the cache of your largest live session expires, and turns orange in the last ten minutes. The menu lists every session, with a command to profile its project. Save this as `arricurdai.1m.sh` in the plugin folder, and run `chmod +x arricurdai.1m.sh`:
@@ -726,6 +739,9 @@ The `1m` in the name refreshes it every minute.
 - [x] **An npm package with a setup command**
 - [x] **`status`**: the sessions of the last hours, also in the macOS menu bar
 - [x] **A first measurement on long real sessions with a lower auto-compact window**, on [one project](#compare-see-what-changed)
+- [x] **Pasted prompts and no repeated passages** in `recall` and in the note after `/clear`
+- [x] **`recall` reads each transcript once**, and keeps what it read in a private cache
+- [x] **The prices of more models** in the guard and in `status`, and a state folder for each user
 - [ ] `profile` recommends an auto-compact window for your sessions
 - [ ] Measurements on more projects
 
