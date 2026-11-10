@@ -1,7 +1,9 @@
-import { chmodSync, closeSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, fstatSync, openSync, readFileSync, readSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, sep } from 'node:path';
 import { claudeConfigDir } from '@arricurdai/transcripts';
+import type { ChunkCache } from './chunk-cache';
+import { isPrivateDir, openPrivateDir } from './private-dir';
 import { typedPrompt } from './prompts';
 import { formatHits, hideSecrets, knownSecrets, loadChunks, redact, search } from './recall';
 
@@ -28,6 +30,8 @@ export interface HookIO {
   stateDir: string;
   /** The command an agent runs to search earlier sessions, for the hint every new session gets. */
   recallCommand?: string;
+  /** Where recall keeps the chunks of the transcripts it read. */
+  cache?: ChunkCache;
 }
 
 /** One folder for each user: on Linux the temporary folder is shared, and a folder made by one user would shut out the others. */
@@ -158,31 +162,6 @@ export function readTail(path: string): string {
 
 const safe = (text: string): string => text.replace(/[^A-Za-z0-9-]/g, '_');
 
-/**
- * Whether the state folder is a folder of this user that no one else can read or write. The files in it hold
- * a prompt, and name the transcript the note is read from: in a folder that someone else can write, neither can be trusted.
- */
-export function isPrivateDir(dir: string): boolean {
-  try {
-    const stats = lstatSync(dir);
-    if (!stats.isDirectory()) return false;
-    // Windows has no such owners and modes: there the temporary folder is already of one user.
-    if (typeof process.getuid !== 'function') return true;
-    return stats.uid === process.getuid() && (stats.mode & 0o077) === 0;
-  } catch {
-    return false;
-  }
-}
-
-/** Makes the state folder, for this user only. Returns false when it is there and is not private. */
-function openStateDir(dir: string): boolean {
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const stats = lstatSync(dir);
-  // A folder of this user that an earlier version left open is closed to the others.
-  if (stats.isDirectory() && typeof process.getuid === 'function' && stats.uid === process.getuid() && (stats.mode & 0o077) !== 0) chmodSync(dir, 0o700);
-  return isPrivateDir(dir);
-}
-
 /** One pending note per transcript folder, that is per project. */
 const markerPath = (stateDir: string, transcript: string): string => join(stateDir, `handoff-${safe(dirname(transcript))}.json`);
 
@@ -196,7 +175,7 @@ export function runGuard(stdin: string, options: { minTokens?: string }, io: Hoo
     const message = call && guardMessage(call, io.now().getTime(), Number.isFinite(minTokens) ? minTokens : DEFAULT_MIN_TOKENS);
     if (!call || !message) return 0;
     // Without a folder to remember the stop in, it could not tell a prompt sent again: the prompt goes through.
-    if (!openStateDir(io.stateDir)) return 0;
+    if (!openPrivateDir(io.stateDir)) return 0;
     const seen = join(io.stateDir, `guard-${safe(input.session_id)}`);
     const marker = markerPath(io.stateDir, input.transcript_path);
     if (existsSync(seen) && readFileSync(seen, 'utf8') === String(call.at)) {
@@ -300,7 +279,7 @@ function afterClear(input: HookInput & { transcript_path: string }, io: HookIO):
   if (!(io.now().getTime() - (pending.at ?? 0) < MARKER_MAX_AGE)) return [];
   const note = handoffNote(readFileSync(pending.transcript, 'utf8'), input.cwd, pending.context ?? 0);
   if (!note) return [];
-  const { chunks, sessions } = loadChunks(dirname(input.transcript_path), input.session_id);
+  const { chunks, sessions } = loadChunks(dirname(input.transcript_path), input.session_id, io.cache);
   const parts = [hideSecrets(note, knownSecrets(chunks))];
   const prompt = pending.prompt?.trim();
   if (prompt) {

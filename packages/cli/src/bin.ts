@@ -3,6 +3,7 @@ import { realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { Command } from 'commander';
 import pc from 'picocolors';
+import { type ChunkCache, defaultCacheDir } from './chunk-cache';
 import { type CompareCommandOptions, runCompare } from './compare';
 import { DEFAULT_MIN_TOKENS, DEFAULT_STATE_DIR, type HookIO, runGuard, runHandoff } from './guard';
 import { type RecallCommandOptions, runRecall } from './recall';
@@ -83,11 +84,18 @@ async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString('utf8');
 }
 
+/** The chunks recall keeps are of this version: another one reads the transcripts again. */
+function chunkCache(): ChunkCache | undefined {
+  const dir = defaultCacheDir(process.env);
+  return dir === undefined ? undefined : { dir, stamp: version };
+}
+
 const hookIO = (): HookIO => ({
   stdout: (text) => process.stdout.write(text),
   now: () => new Date(),
   stateDir: DEFAULT_STATE_DIR,
   recallCommand: `node "${process.argv[1]}" recall`,
+  cache: chunkCache(),
 });
 
 program
@@ -99,7 +107,8 @@ program
   .option('--limit <n>', 'most matches to show', '5')
   .option('--max-tokens <n>', 'most tokens to print', '1500')
   .option('--json', 'print the matches as JSON')
-  .action(async (words: string[], options: RecallCommandOptions) => {
+  .option('--no-cache', 'read every transcript again, and keep nothing of them for the next search')
+  .action(async (words: string[], options: RecallCommandOptions & { cache: boolean }) => {
     process.exitCode = await runRecall(words, options, {
       cwd: process.cwd(),
       env: process.env,
@@ -107,6 +116,7 @@ program
       stderr: (text) => process.stderr.write(text),
       now: () => new Date(),
       colors: false,
+      cache: options.cache ? chunkCache() : undefined,
     });
   });
 

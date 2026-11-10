@@ -246,7 +246,7 @@ New here? The [guide](docs/guide.md) walks through every part of the profile rep
 
 > [!IMPORTANT]
 > - **Nothing leaves your machine.** arricurdAI reads the transcripts and runs `git log` locally. No network calls, no telemetry, no model. Each package has a test that fails if the package imports a module outside a short allowed list, so a network module cannot slip in.
-> - **It only reads.** `profile`, `compare`, `status`, `recall` and the hooks read the transcripts and change nothing. The guard keeps one small state file in the system's temporary folder, in a folder of its own that only you can read. `setup` is the one command that writes: only the hooks in your Claude Code settings, after showing you the changes and keeping a copy of the file.
+> - **It only reads.** `profile`, `compare`, `status`, `recall` and the hooks read the transcripts and change nothing in them or in your project. The guard keeps one small state file in the system's temporary folder, in a folder of its own that only you can read. `recall` keeps the requests and replies it read in a [cache folder](#recall-find-what-earlier-sessions-said) that only you can read, so that the next search is quick. `setup` is the one command that writes: only the hooks in your Claude Code settings, after showing you the changes and keeping a copy of the file.
 > - **The hooks never trap you.** On any problem they let the prompt through, and the guard stops a prompt only once: send it again to go on.
 > - **Secrets stay hidden.** Passwords, API keys, tokens and the passwords in connection strings print as `[redacted]`, so a search does not carry them into a new session.
 
@@ -590,6 +590,7 @@ How it works:
 - **Shows the line that matters.** Each passage is the line that holds the rarest words of the query, with whole lines around it.
 - **Says each thing once.** A passage that repeats one already shown is left out for the next match: successive compaction summaries repeat each other.
 - **Reads pasted prompts too.** A request that was pasted text, or that starts with an image, counts as a request, and is marked as pasted.
+- **Reads each transcript once.** It keeps the requests and replies of a transcript, and reads the transcript again only when it changed: after the first search the next ones take a fraction of a second, also in a project with hundreds of megabytes of transcripts. What it keeps is in the cache folder of your user (`~/Library/Caches/arricurdai` on macOS, `~/.cache/arricurdai` or `$XDG_CACHE_HOME/arricurdai` on Linux), closed to other users. The text there is as in the transcripts, with secrets not yet hidden: they are hidden when a search prints. When Claude Code deletes a transcript, the next search deletes what was kept of it. `--no-cache` reads everything again and keeps nothing; the note after `/clear` uses the same folder.
 - **What it leaves out.**
   - Tool results: the files they show can be read again.
   - The current session: when Claude Code runs the command, it already has that session.
@@ -600,6 +601,7 @@ How it works:
 | `--limit <n>` | 5 | The most passages to show. |
 | `--max-tokens <n>` | 1500 | The most tokens to print. The first passage is always printed. |
 | `--json` | | Prints the passages as JSON. |
+| `--no-cache` | | Reads every transcript again, and keeps nothing for the next search. |
 | `--project <path>`, `--transcripts <dir>` | current folder | As for `profile`. |
 
 Limits:

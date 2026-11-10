@@ -1,7 +1,8 @@
-import { readdirSync, readFileSync, realpathSync } from 'node:fs';
+import { readdirSync, realpathSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { estimateTokens } from '@arricurdai/core';
 import { claudeConfigDir, findTranscriptsDir } from '@arricurdai/transcripts';
+import { cachedChunks, type ChunkCache, fileLines } from './chunk-cache';
 import { typedPrompt, typedText } from './prompts';
 import type { CommandIO } from './run-profile';
 
@@ -28,6 +29,11 @@ export interface RecallHit {
   /** The share of the query that the excerpt holds, weighting each term by how rare it is: from 0 to 1. */
   coverage: number;
   excerpt: string;
+}
+
+/** The command, with the place where it may keep the chunks of the transcripts it read. */
+export interface RecallIO extends CommandIO {
+  cache?: ChunkCache;
 }
 
 export interface RecallCommandOptions {
@@ -135,8 +141,34 @@ function summaryParts(summary: string): string[] {
   return part.trim() ? [...parts, part] : parts;
 }
 
+/**
+ * Changes when the same transcript would give other chunks: the chunks kept from an earlier version are then read again.
+ * Raise it with any change to what `sessionChunks` returns.
+ */
+export const CHUNKS_VERSION = 1;
+
+const USER_LINE = '"type":"user"';
+const ASSISTANT_LINE = '"type":"assistant"';
+const RESULT_LINE = '"tool_result"';
+
 /** Splits a transcript into chunks: each request with the replies and edits that followed, and compaction summaries. */
 export function sessionChunks(text: string, sessionId: string): Chunk[] {
+  return chunksOfLines(text.split('\n'), sessionId);
+}
+
+/** The lines of a transcript file that can hold a prompt or a reply. The others, mostly tool results, are not even decoded. */
+function* promptLines(path: string): Generator<string> {
+  for (const line of fileLines(path)) {
+    if (!line.includes(RESULT_LINE) && (line.includes(USER_LINE) || line.includes(ASSISTANT_LINE))) yield line.toString('utf8');
+  }
+}
+
+/** The chunks of a transcript file, read a piece at a time. */
+export function fileChunks(path: string, sessionId: string): Chunk[] {
+  return chunksOfLines(promptLines(path), sessionId);
+}
+
+function chunksOfLines(lines: Iterable<string>, sessionId: string): Chunk[] {
   const chunks: Chunk[] = [];
   let current: { timestamp: string | undefined; request: string; pasted: boolean; replies: string[] } | undefined;
   const flush = (): void => {
@@ -151,8 +183,8 @@ export function sessionChunks(text: string, sessionId: string): Chunk[] {
     }
     current = undefined;
   };
-  for (const line of text.split('\n')) {
-    if (line.includes('"tool_result"') || !(line.includes('"type":"user"') || line.includes('"type":"assistant"'))) continue;
+  for (const line of lines) {
+    if (line.includes(RESULT_LINE) || !(line.includes(USER_LINE) || line.includes(ASSISTANT_LINE))) continue;
     const entry = parse(line);
     if (!entry || entry.isSidechain || entry.isMeta) continue;
     const content = entry.message?.content;
@@ -179,11 +211,24 @@ export function sessionChunks(text: string, sessionId: string): Chunk[] {
   return chunks;
 }
 
-/** The chunks of every session in a transcript folder, except one, such as the current session. */
-export function loadChunks(dir: string, exclude?: string): { chunks: Chunk[]; sessions: number } {
-  const files = readdirSync(dir).filter((name) => name.endsWith('.jsonl') && name !== `${exclude}.jsonl`);
-  const chunks = files.flatMap((name) => sessionChunks(readFileSync(join(dir, name), 'utf8'), name.slice(0, -'.jsonl'.length)));
-  return { chunks, sessions: files.length };
+/**
+ * The chunks of every session in a transcript folder, except one, such as the current session.
+ * With a cache, it reads only the transcripts that changed since the last search.
+ */
+export function loadChunks(dir: string, exclude?: string, cache?: ChunkCache): { chunks: Chunk[]; sessions: number } {
+  const files = readdirSync(dir)
+    .filter((name) => name.endsWith('.jsonl') && name !== `${exclude}.jsonl`)
+    .flatMap((name) => {
+      try {
+        const stats = statSync(join(dir, name));
+        return stats.isFile() ? [{ name, size: stats.size, mtimeMs: stats.mtimeMs }] : [];
+      } catch {
+        // Deleted since the folder was listed.
+        return [];
+      }
+    });
+  const stamp = cache && { dir: cache.dir, stamp: `${CHUNKS_VERSION}:${cache.stamp}` };
+  return { chunks: cachedChunks(dir, files, fileChunks, stamp), sessions: files.length };
 }
 
 const REDACTED = '[redacted]';
@@ -364,7 +409,7 @@ const positive = (value: string | undefined, fallback: number): number => {
 };
 
 /** `arricurdai recall <words...>`: prints the passages of earlier sessions that match. Leaves out the current session. */
-export async function runRecall(words: readonly string[], options: RecallCommandOptions, io: CommandIO): Promise<number> {
+export async function runRecall(words: readonly string[], options: RecallCommandOptions, io: RecallIO): Promise<number> {
   const query = words.join(' ').trim();
   if (query === '') {
     io.stderr('arricurdai: recall needs words to look for, such as: arricurdai recall "upload retry"\n');
@@ -387,7 +432,7 @@ export async function runRecall(words: readonly string[], options: RecallCommand
     io.stderr('arricurdai: found no Claude Code transcripts for this project.\n');
     return 1;
   }
-  const { chunks, sessions } = loadChunks(dir, io.env.CLAUDE_CODE_SESSION_ID);
+  const { chunks, sessions } = loadChunks(dir, io.env.CLAUDE_CODE_SESSION_ID, io.cache);
   const hits = search(chunks, query, positive(options.limit, 5));
   if (options.json) {
     const matches = hits.map(({ chunk, request, score, excerpt: text }) => ({ sessionId: chunk.sessionId, timestamp: chunk.timestamp, request, score, excerpt: text }));
