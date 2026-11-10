@@ -246,7 +246,7 @@ New here? The [guide](docs/guide.md) walks through every part of the profile rep
 
 > [!IMPORTANT]
 > - **Nothing leaves your machine.** arricurdAI reads the transcripts and runs `git log` locally. No network calls, no telemetry, no model. Each package has a test that fails if the package imports a module outside a short allowed list, so a network module cannot slip in.
-> - **It only reads.** `profile`, `compare`, `status`, `recall` and the hooks read the transcripts and change nothing. The guard keeps one small state file in the system's temporary folder. `setup` is the one command that writes: only the hooks in your Claude Code settings, after showing you the changes and keeping a copy of the file.
+> - **It only reads.** `profile`, `compare`, `status`, `recall` and the hooks read the transcripts and change nothing. The guard keeps one small state file in the system's temporary folder, in a folder of its own that only you can read. `setup` is the one command that writes: only the hooks in your Claude Code settings, after showing you the changes and keeping a copy of the file.
 > - **The hooks never trap you.** On any problem they let the prompt through, and the guard stops a prompt only once: send it again to go on.
 > - **Secrets stay hidden.** Passwords, API keys, tokens and the passwords in connection strings print as `[redacted]`, so a search does not carry them into a new session.
 

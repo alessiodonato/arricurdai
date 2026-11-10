@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { readSince, readStatus, renderStatus, renderSwiftBar, runStatus, type Status } from '../src/status';
+import { addToday, readSince, readStatus, renderStatus, renderSwiftBar, runStatus, type Status, type TodayStatus } from '../src/status';
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -44,7 +44,7 @@ function claudeDir(): string {
     user(`${shop}/web`, ago(20 * MINUTE)),
   ], ago(20 * MINUTE));
   write('-work-shop-api', 'aaaa1111/subagents/agent-x1.jsonl', [
-    assistant(shop, ago(25 * MINUTE), 'msg-sub', usage(20_000), 'claude-haiku-5-5'),
+    assistant(shop, ago(25 * MINUTE), 'msg-sub', usage(20_000), 'claude-next-9'),
     guardStop(shop, ago(25 * MINUTE)),
   ], ago(25 * MINUTE));
   write('-work-blog', 'bbbb2222.jsonl', [user('/work/blog', ago(2 * HOUR)), assistant('/work/blog', ago(2 * HOUR), 'msg-2', usage(88_000))], ago(2 * HOUR));
@@ -85,6 +85,22 @@ describe('readStatus', () => {
     expect(readStatus({ hours: '3' }, io(claudeDir())).sessions.map((session) => session.project)).toEqual(['/work/shop-api', '/work/blog', '/work/docs-site']);
     expect(readStatus({ hours: '1' }, io(claudeDir())).sessions.map((session) => session.project)).toEqual(['/work/shop-api', '/work/docs-site']);
     expect(readStatus({ limit: '1' }, io(claudeDir())).sessions).toHaveLength(1);
+  });
+});
+
+describe('addToday', () => {
+  it('prices each model at its own input price, with its own share for cache reads', () => {
+    const today: TodayStatus = { since: '', calls: 0, tokens: { input: 0, cacheWrite: 0, cacheRead: 0, output: 0 }, usd: 0, unpricedCalls: 0, guardStops: 0 };
+    const calls = [
+      assistant('/work/x', NOW, 'fable', usage(201_002), 'claude-fable-5-2'),
+      assistant('/work/x', NOW, 'haiku', usage(201_002), 'claude-haiku-5-5'),
+      assistant('/work/x', NOW, 'opus', usage(201_002), 'claude-opus-5-5'),
+    ];
+    addToday(today, calls.join('\n'), NOW.getTime() - HOUR, true, new Set());
+    // 2 input + 2 × 1,000 written + share × 200,000 read + 5 × 100 output, at the input price of each model.
+    const cost = (price: number, share: number): number => ((2 + 2_000 + share * 200_000 + 500) * price) / 1e6;
+    expect(today.unpricedCalls).toBe(0);
+    expect(today.usd).toBeCloseTo(cost(8, 0.025) + cost(0.1, 0.1) + cost(4, 0.05), 10);
   });
 });
 

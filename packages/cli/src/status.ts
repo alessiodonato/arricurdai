@@ -2,7 +2,7 @@ import { closeSync, fstatSync, openSync, readdirSync, readSync, statSync } from 
 import { basename, join } from 'node:path';
 import { DEFAULT_COST_PARAMS, type Usage, weightedCost } from '@arricurdai/core';
 import { claudeConfigDir, GUARD_STOP } from '@arricurdai/transcripts';
-import { DEFAULT_MIN_TOKENS, duration, INPUT_PRICE, lastCall, readTail } from './guard';
+import { CACHE_READ_SHARE, DEFAULT_MIN_TOKENS, duration, INPUT_PRICE, lastCall, readTail } from './guard';
 import { MENU_ICON } from './menu-icon';
 import { type CommandIO, UserError, withErrors } from './run-profile';
 
@@ -236,9 +236,10 @@ export function addToday(today: TodayStatus, text: string, since: number, main: 
     today.tokens.cacheWrite += tokens.cacheWrite;
     today.tokens.cacheRead += tokens.cacheRead;
     today.tokens.output += tokens.output;
-    const price = typeof message.model === 'string' ? INPUT_PRICE[message.model] : undefined;
+    const model = typeof message.model === 'string' ? message.model : '';
+    const price = INPUT_PRICE[model];
     if (price === undefined) today.unpricedCalls++;
-    else today.usd += (weightedCost(tokens, DEFAULT_COST_PARAMS) * price) / 1e6;
+    else today.usd += (weightedCost(tokens, { ...DEFAULT_COST_PARAMS, r: CACHE_READ_SHARE[model] ?? DEFAULT_COST_PARAMS.r }) * price) / 1e6;
   }
 }
 

@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -28,7 +28,7 @@ function setup() {
   const io = (at: string) => ({ stdout: (text: string) => out.push(text), now: () => new Date(at), stateDir: join(dir, 'state') });
   const prompt = JSON.stringify({ session_id: 'old', transcript_path: transcript, cwd: '/repo', hook_event_name: 'UserPromptSubmit', prompt: 'go on' });
   const start = (source: string) => JSON.stringify({ session_id: 'new', transcript_path: join(dir, 'new.jsonl'), cwd: '/repo', hook_event_name: 'SessionStart', source });
-  return { out, io, prompt, start };
+  return { out, io, prompt, start, dir };
 }
 
 describe('lastCall', () => {
@@ -44,6 +44,13 @@ describe('guardMessage', () => {
   it('stops a large session whose cache expired, with the cost of writing it again', () => {
     // 300,000 tokens × 2 (one-hour cache write) × $4 per million.
     expect(guardMessage(call, 2 * HOUR, 100_000)).toContain('about $2.40');
+  });
+
+  it('knows the price of the other models', () => {
+    // 300,000 tokens × 2 × $8 per million for Claude Fable 5.2, and × $0.10 for Claude Haiku 5.5.
+    expect(guardMessage({ ...call, model: 'claude-fable-5-2' }, 2 * HOUR, 100_000)).toContain('about $4.80');
+    expect(guardMessage({ ...call, model: 'claude-haiku-5-5' }, 2 * HOUR, 100_000)).toContain('about $0.06');
+    expect(guardMessage({ ...call, model: 'claude-next-9' }, 2 * HOUR, 100_000)).not.toContain('$');
   });
 
   it('lets the prompt through while the cache lives, or when the context is small', () => {
@@ -83,6 +90,45 @@ describe('guard and handoff hooks', () => {
     runGuard(prompt, {}, io('2026-10-26T12:00:00Z'));
     runHandoff(start('startup'), io('2026-10-26T12:01:00Z'));
     expect(runGuard('not json', {}, io('2026-10-26T12:00:00Z'))).toBe(0);
+    expect(out).toHaveLength(1);
+  });
+});
+
+// Owners and modes of files, as on Linux and macOS.
+describe.skipIf(process.platform === 'win32')('the state folder', () => {
+  it('is made for this user only, and so are the files in it', () => {
+    const { io, prompt, dir } = setup();
+    runGuard(prompt, {}, io('2026-10-26T12:00:00Z'));
+    const state = join(dir, 'state');
+    expect(statSync(state).mode & 0o777).toBe(0o700);
+    const files = readdirSync(state);
+    expect(files).toHaveLength(2);
+    expect(files.map((name) => statSync(join(state, name)).mode & 0o777)).toEqual([0o600, 0o600]);
+  });
+
+  it('closes a folder of this user that was left open to the others, and goes on', () => {
+    const { out, io, prompt, dir } = setup();
+    mkdirSync(join(dir, 'state'));
+    chmodSync(join(dir, 'state'), 0o755);
+    runGuard(prompt, {}, io('2026-10-26T12:00:00Z'));
+    expect(statSync(join(dir, 'state')).mode & 0o777).toBe(0o700);
+    expect(JSON.parse(out[0]!)).toMatchObject({ decision: 'block' });
+  });
+
+  it('lets the prompt through when the folder is a link to somewhere else', () => {
+    const { out, io, prompt, dir } = setup();
+    mkdirSync(join(dir, 'elsewhere'));
+    symlinkSync(join(dir, 'elsewhere'), join(dir, 'state'));
+    expect(runGuard(prompt, {}, io('2026-10-26T12:00:00Z'))).toBe(0);
+    expect(out).toHaveLength(0);
+    expect(readdirSync(join(dir, 'elsewhere'))).toHaveLength(0);
+  });
+
+  it('gives no note from a folder that others can write', () => {
+    const { out, io, prompt, start, dir } = setup();
+    runGuard(prompt, {}, io('2026-10-26T12:00:00Z'));
+    chmodSync(join(dir, 'state'), 0o777);
+    runHandoff(start('clear'), io('2026-10-26T12:01:00Z'));
     expect(out).toHaveLength(1);
   });
 });

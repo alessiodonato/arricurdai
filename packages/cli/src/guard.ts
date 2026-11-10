@@ -1,4 +1,4 @@
-import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, sep } from 'node:path';
 import { claudeConfigDir } from '@arricurdai/transcripts';
@@ -30,7 +30,8 @@ export interface HookIO {
   recallCommand?: string;
 }
 
-export const DEFAULT_STATE_DIR = join(tmpdir(), 'arricurdai');
+/** One folder for each user: on Linux the temporary folder is shared, and a folder made by one user would shut out the others. */
+export const DEFAULT_STATE_DIR = join(tmpdir(), typeof process.getuid === 'function' ? `arricurdai-${process.getuid()}` : 'arricurdai');
 export const DEFAULT_MIN_TOKENS = 100_000;
 
 const HOUR = 3_600_000;
@@ -38,8 +39,25 @@ const TAIL_BYTES = 2 * 1024 * 1024;
 const MARKER_MAX_AGE = 12 * HOUR;
 /** The share of the stopped prompt that a passage must hold to enter the note: below it, a passage is mostly noise. */
 const NOTE_MIN_COVERAGE = 0.4;
-/** Input price in USD per million tokens, measured from the costs Claude Code records. */
-export const INPUT_PRICE: Record<string, number> = { 'claude-opus-5-5': 4, 'claude-sonnet-5-5': 2 };
+/**
+ * Input price in USD per million tokens, measured from the costs Claude Code records. Claude Fable 5.2 has no
+ * recorded cost yet: its price is the published one.
+ */
+export const INPUT_PRICE: Record<string, number> = {
+  'claude-fable-5-2': 8,
+  'claude-opus-5-5': 4,
+  'claude-opus-5': 5,
+  'claude-sonnet-5-5': 2,
+  'claude-haiku-5-5': 0.1,
+  'claude-haiku-4-5-20251001': 1,
+};
+/** The price of a cache read as a share of the input price, for the models where it is not 0.05. */
+export const CACHE_READ_SHARE: Record<string, number> = {
+  'claude-fable-5-2': 0.025,
+  'claude-opus-5': 0.1,
+  'claude-haiku-5-5': 0.1,
+  'claude-haiku-4-5-20251001': 0.1,
+};
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 
 interface Entry {
@@ -139,6 +157,32 @@ export function readTail(path: string): string {
 }
 
 const safe = (text: string): string => text.replace(/[^A-Za-z0-9-]/g, '_');
+
+/**
+ * Whether the state folder is a folder of this user that no one else can read or write. The files in it hold
+ * a prompt, and name the transcript the note is read from: in a folder that someone else can write, neither can be trusted.
+ */
+export function isPrivateDir(dir: string): boolean {
+  try {
+    const stats = lstatSync(dir);
+    if (!stats.isDirectory()) return false;
+    // Windows has no such owners and modes: there the temporary folder is already of one user.
+    if (typeof process.getuid !== 'function') return true;
+    return stats.uid === process.getuid() && (stats.mode & 0o077) === 0;
+  } catch {
+    return false;
+  }
+}
+
+/** Makes the state folder, for this user only. Returns false when it is there and is not private. */
+function openStateDir(dir: string): boolean {
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const stats = lstatSync(dir);
+  // A folder of this user that an earlier version left open is closed to the others.
+  if (stats.isDirectory() && typeof process.getuid === 'function' && stats.uid === process.getuid() && (stats.mode & 0o077) !== 0) chmodSync(dir, 0o700);
+  return isPrivateDir(dir);
+}
+
 /** One pending note per transcript folder, that is per project. */
 const markerPath = (stateDir: string, transcript: string): string => join(stateDir, `handoff-${safe(dirname(transcript))}.json`);
 
@@ -151,7 +195,8 @@ export function runGuard(stdin: string, options: { minTokens?: string }, io: Hoo
     const minTokens = Number(options.minTokens ?? DEFAULT_MIN_TOKENS);
     const message = call && guardMessage(call, io.now().getTime(), Number.isFinite(minTokens) ? minTokens : DEFAULT_MIN_TOKENS);
     if (!call || !message) return 0;
-    mkdirSync(io.stateDir, { recursive: true });
+    // Without a folder to remember the stop in, it could not tell a prompt sent again: the prompt goes through.
+    if (!openStateDir(io.stateDir)) return 0;
     const seen = join(io.stateDir, `guard-${safe(input.session_id)}`);
     const marker = markerPath(io.stateDir, input.transcript_path);
     if (existsSync(seen) && readFileSync(seen, 'utf8') === String(call.at)) {
@@ -159,8 +204,8 @@ export function runGuard(stdin: string, options: { minTokens?: string }, io: Hoo
       rmSync(marker, { force: true });
       return 0;
     }
-    writeFileSync(seen, String(call.at));
-    writeFileSync(marker, JSON.stringify({ transcript: input.transcript_path, context: call.context, at: io.now().getTime(), prompt: input.prompt }));
+    writeFileSync(seen, String(call.at), { mode: 0o600 });
+    writeFileSync(marker, JSON.stringify({ transcript: input.transcript_path, context: call.context, at: io.now().getTime(), prompt: input.prompt }), { mode: 0o600 });
     io.stdout(JSON.stringify({ decision: 'block', reason: message }));
     return 0;
   } catch {
@@ -248,7 +293,7 @@ export function handoffNote(text: string, cwd: string | undefined, context: numb
 /** The note on the session the guard stopped, and the earlier context that matches the prompt it stopped. */
 function afterClear(input: HookInput & { transcript_path: string }, io: HookIO): string[] {
   const marker = markerPath(io.stateDir, input.transcript_path);
-  if (!existsSync(marker)) return [];
+  if (!isPrivateDir(io.stateDir) || !existsSync(marker)) return [];
   const pending = parse<{ transcript?: string; context?: number; at?: number; prompt?: string }>(readFileSync(marker, 'utf8'));
   rmSync(marker, { force: true });
   if (!pending?.transcript || pending.transcript === input.transcript_path) return [];
