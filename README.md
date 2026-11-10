@@ -565,7 +565,7 @@ The prompt cache keeps the context of a main session for an hour. After a longer
 Two hooks act on it:
 
 - **`arricurdai guard`** runs when you send a prompt. If the cache of a session larger than 100,000 tokens has expired, it stops the prompt once and says what going on would cost. Run `/clear` to start fresh, or send the prompt again to go on. `--min-tokens <n>` changes the smallest session worth stopping for.
-- **`arricurdai handoff`** runs when a session starts. After that `/clear`, it gives the new session a note on the old one, built from the transcript without a model: the last requests, the files changed, the open tasks and the last reply. It adds up to three passages of earlier sessions that match the prompt you were about to send, about 800 tokens at most: only those whose excerpt holds at least 40% of the prompt, rare words weighing more, so that a loose match does not fill the note with noise. In every new session, and after a compaction, it adds one line on how to run [`recall`](#recall-find-what-earlier-sessions-said).
+- **`arricurdai handoff`** runs when a session starts. After that `/clear`, it gives the new session a note on the old one, built from the transcript without a model: the last requests, the files changed, the open tasks and the last reply. Temporary files are counted for each folder, not listed. It adds up to three passages of earlier sessions that match the prompt you were about to send, about 800 tokens at most: only those whose excerpt holds at least 40% of the prompt, rare words weighing more, so that a loose match does not fill the note with noise. In every new session, and after a compaction, it adds one line on how to run [`recall`](#recall-find-what-earlier-sessions-said).
 
 The settings are in [Get started](#-get-started). Both hooks read local files only, and on any problem they let the prompt through.
 
@@ -588,6 +588,8 @@ How it works:
 - **The search is lexical (BM25), without a model.** It reads local files only.
 - **Matches across word forms.** It folds singular and plural in Italian and English, so `fattura` finds `fatture`, and it splits identifiers such as `MethodAllowList`.
 - **Shows the line that matters.** Each passage is the line that holds the rarest words of the query, with whole lines around it.
+- **Says each thing once.** A passage that repeats one already shown is left out for the next match: successive compaction summaries repeat each other.
+- **Reads pasted prompts too.** A request that was pasted text, or that starts with an image, counts as a request, and is marked as pasted.
 - **What it leaves out.**
   - Tool results: the files they show can be read again.
   - The current session: when Claude Code runs the command, it already has that session.
