@@ -41,6 +41,36 @@ describe('sessionChunks', () => {
     expect(chunks[2]!.text).toContain('Postgres');
   });
 
+  it('keeps a prompt that starts with pasted text or with an image, and gives it its own replies', () => {
+    const pasted = '<pasted_content id="1a2b">\nTypeError: retries is not iterable\n    at upload (client.ts:40)\n</pasted_content id="1a2b">';
+    const chunks = sessionChunks(
+      [
+        user('2026-10-03T09:00:00Z', 'Rename the invoice module'),
+        assistant('2026-10-03T09:01:00Z', [{ type: 'text', text: 'Renamed to billing.' }]),
+        user('2026-10-03T10:00:00Z', pasted),
+        assistant('2026-10-03T10:01:00Z', [{ type: 'text', text: 'The retry list was undefined on the first call.' }]),
+        user('2026-10-03T11:00:00Z', `${pasted}\nwhy does this fail?`),
+        user('2026-10-03T12:00:00Z', [{ type: 'text', text: '[Image #1] the chart overlaps the legend' }, { type: 'image', source: {} }]),
+        assistant('2026-10-03T12:01:00Z', [{ type: 'text', text: 'Moved the legend below the chart.' }]),
+        user('2026-10-03T13:00:00Z', '<command-name>/clear</command-name>'),
+        user('2026-10-03T13:00:01Z', '[Request interrupted by user]'),
+        user('2026-10-03T13:00:02Z', '<task-notification>done</task-notification>'),
+      ].join('\n'),
+      'old',
+    );
+    expect(chunks.map((chunk) => chunk.request)).toEqual([
+      'Rename the invoice module',
+      'TypeError: retries is not iterable\n    at upload (client.ts:40)',
+      'TypeError: retries is not iterable\n    at upload (client.ts:40)\nwhy does this fail?',
+      '[Image #1] the chart overlaps the legend',
+    ]);
+    expect(chunks.map((chunk) => chunk.pasted ?? false)).toEqual([false, true, true, false]);
+    expect(chunks[0]!.text).not.toContain('retry list');
+    expect(chunks[1]!.text).toContain('retry list');
+    expect(chunks[3]!.text).toContain('legend below');
+    expect(formatHits(search(chunks, 'retries iterable', 1), 'retries iterable', 1, 500)).toContain('request, with pasted text: "TypeError');
+  });
+
   const summaryParts = (summary: string): string[] => sessionChunks(user('2026-10-02T09:00:00Z', summary, { isCompactSummary: true }), 'old').map((chunk) => chunk.text);
 
   it('divides a long compaction summary between lines, keeping every line whole', () => {
@@ -102,6 +132,33 @@ describe('search', () => {
     expect(all).toHaveLength(2);
     expect(all.find((hit) => hit.chunk === scattered)!.coverage).toBeLessThan(0.9);
     expect(search([scattered, together], 'brevo mittente', 2, 0.9).map((hit) => hit.chunk)).toEqual([together]);
+  });
+});
+
+describe('search and repeated excerpts', () => {
+  const summary = (timestamp: string, text: string): string => user(timestamp, text, { isCompactSummary: true });
+  const decided = 'The team decided to keep the upload retries at three with a backoff of two seconds.';
+  const chunks = sessionChunks(
+    [
+      summary('2026-10-04T09:00:00Z', decided),
+      summary('2026-10-04T11:00:00Z', decided),
+      summary('2026-10-04T13:00:00Z', `${decided} Nothing else changed.`),
+      user('2026-10-05T09:00:00Z', 'How many upload retries do we make?'),
+      assistant('2026-10-05T09:01:00Z', [{ type: 'text', text: 'Three, as set in client.ts.' }]),
+    ].join('\n'),
+    'old',
+  );
+
+  it('prints once what successive compaction summaries repeat, and goes on to the next match', () => {
+    const hits = search(chunks, 'upload retries backoff', 3);
+    expect(hits.filter((hit) => hit.excerpt.includes('backoff of two seconds'))).toHaveLength(1);
+    expect(hits.map((hit) => hit.chunk.request)).toContain('How many upload retries do we make?');
+  });
+
+  it('keeps matches that share words but say different things', () => {
+    const other = sessionChunks([summary('2026-10-06T09:00:00Z', 'The upload retries were moved to the queue worker, with no backoff.')].join('\n'), 'new');
+    const hits = search([...chunks, ...other], 'upload retries backoff', 5);
+    expect(hits.some((hit) => hit.excerpt.includes('queue worker'))).toBe(true);
   });
 });
 

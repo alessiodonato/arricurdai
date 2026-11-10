@@ -1,8 +1,8 @@
 import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { guardMessage, lastCall, runGuard, runHandoff } from '../src/guard';
+import { guardMessage, handoffNote, lastCall, runGuard, runHandoff } from '../src/guard';
 
 const HOUR = 3_600_000;
 const big = { input_tokens: 2, cache_creation_input_tokens: 1_000, cache_read_input_tokens: 299_000, cache_creation: { ephemeral_1h_input_tokens: 1_000, ephemeral_5m_input_tokens: 0 } };
@@ -84,5 +84,53 @@ describe('guard and handoff hooks', () => {
     runHandoff(start('startup'), io('2026-10-26T12:01:00Z'));
     expect(runGuard('not json', {}, io('2026-10-26T12:00:00Z'))).toBe(0);
     expect(out).toHaveLength(1);
+  });
+});
+
+describe('handoffNote', () => {
+  const edit = (timestamp: string, ...paths: string[]): string =>
+    assistant(timestamp, big, paths.map((path, index) => ({ type: 'tool_use', id: `e${index}`, name: 'Write', input: { file_path: path } })));
+
+  it('keeps a request that was pasted or starts with an image, and says which was pasted', () => {
+    const note = handoffNote(
+      [
+        user('2026-10-26T09:00:00Z', '<pasted_content id="9f">\nError: upload failed after 3 retries\n</pasted_content id="9f">'),
+        user('2026-10-26T09:10:00Z', [{ type: 'text', text: '[Image #1] is this the right chart?' }, { type: 'image', source: {} }]),
+        user('2026-10-26T09:20:00Z', '<command-name>/model</command-name>'),
+      ].join('\n'),
+      '/repo',
+      1,
+    );
+    expect(note).toContain('1. (with pasted text) Error: upload failed after 3 retries');
+    expect(note).toContain('2. [Image #1] is this the right chart?');
+    expect(note).not.toContain('pasted_content');
+    expect(note).not.toContain('command-name');
+  });
+
+  it('counts the temporary files and those of Claude Code for each folder, and lists the others', () => {
+    const memory = join(homedir(), '.claude', 'projects', '-repo', 'memory');
+    const note = handoffNote(
+      [
+        edit('2026-10-26T09:00:00Z', '/repo/src/upload.ts', '/tmp/run-1/scratchpad/check.mjs', '/tmp/run-1/scratchpad/logo/sheet.html', join(memory, 'style.md')),
+        edit('2026-10-26T09:10:00Z', '/home/dev/notes/plan.md', '/tmp/run-1/scratchpad/check.mjs'),
+      ].join('\n'),
+      '/repo',
+      1,
+    );
+    expect(note).toContain('Files changed: src/upload.ts, /home/dev/notes/plan.md\n');
+    expect(note).toContain(`not listed: 2 under /tmp/run-1/scratchpad, 1 under ${memory}`);
+    expect(note).not.toContain('check.mjs');
+  });
+
+  it('lists a temporary folder that is the project itself', () => {
+    expect(handoffNote(edit('2026-10-26T09:00:00Z', '/tmp/demo/src/a.ts'), '/tmp/demo', 1)).toContain('Files changed: src/a.ts');
+  });
+
+  it('keeps the files edited last when there are more than it lists', () => {
+    const paths = Array.from({ length: 35 }, (_, index) => `/repo/src/file${index}.ts`);
+    const note = handoffNote([edit('2026-10-26T09:00:00Z', ...paths), edit('2026-10-26T09:10:00Z', '/repo/src/file0.ts')].join('\n'), '/repo', 1)!;
+    expect(note).toContain('src/file0.ts (2 edits)');
+    expect(note).not.toContain('src/file5.ts');
+    expect(note).toContain('src/file6.ts');
   });
 });

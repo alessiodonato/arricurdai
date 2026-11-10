@@ -1,6 +1,8 @@
 import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
+import { claudeConfigDir } from '@arricurdai/transcripts';
+import { typedPrompt } from './prompts';
 import { formatHits, hideSecrets, knownSecrets, loadChunks, redact, search } from './recall';
 
 // Two Claude Code hooks. `guard` (UserPromptSubmit) stops the first prompt after a pause that let the
@@ -168,9 +170,26 @@ export function runGuard(stdin: string, options: { minTokens?: string }, io: Hoo
 
 const shorten = (text: string, max: number): string => (text.length <= max ? text : `${text.slice(0, max)}…`);
 
+const under = (path: string, root: string): boolean => path === root || path.startsWith(root.endsWith(sep) ? root : `${root}${sep}`);
+
+/** Folders whose files a new session rarely needs by name: temporary ones, and the one Claude Code keeps for itself, with its memory. */
+const sideRoots = (): string[] => [tmpdir(), '/tmp', '/private/tmp', '/var/tmp', '/var/folders', '/private/var/folders', claudeConfigDir(process.env)];
+
+/** The folder that holds all of these files. */
+function commonFolder(paths: readonly string[]): string {
+  let common = dirname(paths[0] ?? '').split(sep);
+  for (const path of paths.slice(1)) {
+    const parts = dirname(path).split(sep);
+    let same = 0;
+    while (same < common.length && common[same] === parts[same]) same++;
+    common = common.slice(0, same);
+  }
+  return common.join(sep) || sep;
+}
+
 /** A note on a session, from its transcript: the last requests, the files changed, open tasks, the last reply. */
 export function handoffNote(text: string, cwd: string | undefined, context: number): string | undefined {
-  const prompts: string[] = [];
+  const prompts: { text: string; pasted: boolean }[] = [];
   const files = new Map<string, number>();
   let todos: { content?: unknown; status?: unknown }[] = [];
   let reply: string | undefined;
@@ -181,31 +200,46 @@ export function handoffNote(text: string, cwd: string | undefined, context: numb
     lastActive = entry.timestamp ?? lastActive;
     const content = entry.message?.content;
     if (entry.type === 'user' && !entry.isMeta && !entry.isCompactSummary) {
-      const typed = typeof content === 'string' ? content : blocks(content).filter((block) => block.type === 'text').map((block) => block.text ?? '').join('\n');
       // Leaves out tool results, command wrappers such as <command-name> and notices such as [Request interrupted].
-      if (typed.trim() && !/^\s*[<[]/.test(typed)) prompts.push(typed.trim());
+      const prompt = typedPrompt(content);
+      if (prompt) prompts.push(prompt);
     } else if (entry.type === 'assistant') {
       for (const block of blocks(content)) {
         if (block.type === 'text' && block.text?.trim()) reply = block.text.trim();
         if (block.type !== 'tool_use') continue;
         const path = block.input?.file_path ?? block.input?.notebook_path;
-        if (typeof path === 'string' && EDIT_TOOLS.has(block.name ?? '')) files.set(path, (files.get(path) ?? 0) + 1);
+        if (typeof path === 'string' && EDIT_TOOLS.has(block.name ?? '')) {
+          // Set again, so that the files stay in the order of their last edit.
+          const edits = (files.get(path) ?? 0) + 1;
+          files.delete(path);
+          files.set(path, edits);
+        }
         if (block.name === 'TodoWrite' && Array.isArray(block.input?.todos)) todos = block.input.todos as typeof todos;
       }
     }
   }
   if (prompts.length === 0 && files.size === 0 && reply === undefined) return undefined;
 
-  const where = (path: string): string => {
-    const inside = cwd === undefined ? path : relative(cwd, path);
-    return inside.startsWith('..') ? path : inside;
-  };
+  const outside = (path: string): boolean => cwd === undefined || relative(cwd, path).startsWith('..');
+  const where = (path: string): string => (outside(path) ? path : relative(cwd!, path));
+  // Files outside the project in a temporary folder, or in the folder of Claude Code: counted for each folder, not listed.
+  const roots = sideRoots();
+  const aside = new Map<string, string[]>();
+  const listed: [string, number][] = [];
+  for (const [path, edits] of files) {
+    const root = outside(path) ? roots.find((candidate) => under(path, candidate)) : undefined;
+    if (root === undefined) listed.push([path, edits]);
+    else aside.set(root, [...(aside.get(root) ?? []), path]);
+  }
+  const changed = listed.slice(-30).map(([path, edits]) => (edits > 1 ? `${where(path)} (${edits} edits)` : where(path)));
+  const counted = [...aside.values()].map((paths) => `${paths.length} under ${commonFolder(paths)}`);
   const open = todos.filter((todo) => todo.status !== 'completed' && typeof todo.content === 'string');
   const parts = [
     `Note from arricurdai on the previous session, last active ${lastActive ?? 'at an unknown time'}. It was cleared after a pause so as not to write its ${context.toLocaleString('en-US')} tokens of context to the cache again. Read files again when you need their content.`,
   ];
-  if (prompts.length > 0) parts.push(`Last requests of the user:\n${prompts.slice(-3).map((prompt, index) => `${index + 1}. ${shorten(redact(prompt), 500)}`).join('\n')}`);
-  if (files.size > 0) parts.push(`Files changed: ${[...files].slice(-30).map(([path, edits]) => (edits > 1 ? `${where(path)} (${edits} edits)` : where(path))).join(', ')}`);
+  if (prompts.length > 0) parts.push(`Last requests of the user:\n${prompts.slice(-3).map((prompt, index) => `${index + 1}. ${prompt.pasted ? '(with pasted text) ' : ''}${shorten(redact(prompt.text), 500)}`).join('\n')}`);
+  if (changed.length > 0) parts.push(`Files changed: ${changed.join(', ')}`);
+  if (counted.length > 0) parts.push(`Temporary files and files of Claude Code changed, not listed: ${counted.join(', ')}`);
   if (open.length > 0) parts.push(`Open tasks:\n${open.map((todo) => `- [${String(todo.status)}] ${shorten(redact(String(todo.content)), 200)}`).join('\n')}`);
   if (reply !== undefined) parts.push(`Last reply of the assistant:\n${shorten(redact(reply), 2000)}`);
   return parts.join('\n\n');

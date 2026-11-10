@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { estimateTokens } from '@arricurdai/core';
 import { claudeConfigDir, findTranscriptsDir } from '@arricurdai/transcripts';
+import { typedPrompt, typedText } from './prompts';
 import type { CommandIO } from './run-profile';
 
 // Lexical search over the earlier sessions of a project, so that an agent can keep a small context and still
@@ -14,6 +15,8 @@ export interface Chunk {
   timestamp: string | undefined;
   /** The request the replies answer. Empty for a part of a compaction summary. */
   request: string;
+  /** Some of the request was pasted text: it may be a log or a message, not words of the user. */
+  pasted?: boolean;
   text: string;
 }
 
@@ -40,6 +43,8 @@ const MAX_REQUEST_CHARS = 1_000;
 const MAX_REPLY_CHARS = 5_000;
 const SUMMARY_PART_CHARS = 2_000;
 const EXCERPT_CHARS = 700;
+/** Two excerpts that share more of their terms than this say the same thing: successive compaction summaries repeat each other. */
+const SAME_EXCERPT = 0.6;
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
 const STOPWORDS = new Set((
   'the a an and or of to in on for with is are was were be been it its this that these those as at by from we you i ' +
@@ -133,7 +138,7 @@ function summaryParts(summary: string): string[] {
 /** Splits a transcript into chunks: each request with the replies and edits that followed, and compaction summaries. */
 export function sessionChunks(text: string, sessionId: string): Chunk[] {
   const chunks: Chunk[] = [];
-  let current: { timestamp: string | undefined; request: string; replies: string[] } | undefined;
+  let current: { timestamp: string | undefined; request: string; pasted: boolean; replies: string[] } | undefined;
   const flush = (): void => {
     if (current) {
       const replies = current.replies.join('\n');
@@ -141,7 +146,8 @@ export function sessionChunks(text: string, sessionId: string): Chunk[] {
       const cut = Math.max(replies.length - MAX_REPLY_CHARS, 0);
       const line = cut === 0 ? -1 : replies.indexOf('\n', cut);
       const kept = replies.slice(line < 0 ? cut : line + 1);
-      chunks.push({ sessionId, timestamp: current.timestamp, request: current.request, text: `${current.request}\n${kept}` });
+      const pasted = current.pasted ? { pasted: true } : {};
+      chunks.push({ sessionId, timestamp: current.timestamp, request: current.request, ...pasted, text: `${current.request}\n${kept}` });
     }
     current = undefined;
   };
@@ -151,13 +157,15 @@ export function sessionChunks(text: string, sessionId: string): Chunk[] {
     if (!entry || entry.isSidechain || entry.isMeta) continue;
     const content = entry.message?.content;
     if (entry.type === 'user') {
-      const typed = typeof content === 'string' ? content : blocks(content).filter((block) => block.type === 'text').map((block) => block.text ?? '').join('\n');
       if (entry.isCompactSummary) {
         flush();
-        for (const part of summaryParts(typed)) chunks.push({ sessionId, timestamp: entry.timestamp, request: '', text: part });
-      } else if (typed.trim() && !/^\s*[<[]/.test(typed)) {
+        for (const part of summaryParts(typedText(content))) chunks.push({ sessionId, timestamp: entry.timestamp, request: '', text: part });
+        continue;
+      }
+      const prompt = typedPrompt(content);
+      if (prompt) {
         flush();
-        current = { timestamp: entry.timestamp, request: typed.trim().slice(0, MAX_REQUEST_CHARS), replies: [] };
+        current = { timestamp: entry.timestamp, request: prompt.text.slice(0, MAX_REQUEST_CHARS), pasted: prompt.pasted, replies: [] };
       }
     } else if (entry.type === 'assistant' && current) {
       for (const block of blocks(content)) {
@@ -271,10 +279,18 @@ function excerpt(text: string, weights: ReadonlyMap<string, number>): string {
   return shown.length > EXCERPT_CHARS ? `${shown.slice(0, EXCERPT_CHARS)}…` : shown;
 }
 
+/** The share of the terms of two excerpts that both hold: from 0 to 1. */
+function shared(a: ReadonlySet<string>, b: ReadonlySet<string>): number {
+  let both = 0;
+  for (const term of a) if (b.has(term)) both++;
+  return both / (a.size + b.size - both || 1);
+}
+
 /**
  * Ranks the chunks with BM25 (k1 = 1.2, b = 0.75). Newer chunks first on equal scores.
  * With `minCoverage`, a chunk counts only when its excerpt holds at least that share of the query: a long chunk can
  * contain every word of a query by chance, scattered across replies on other subjects.
+ * A chunk whose excerpt repeats one already found is left out, for the next in the ranking.
  */
 export function search(chunks: readonly Chunk[], query: string, limit: number, minCoverage = 0): RecallHit[] {
   const wanted = [...new Set(terms(query))];
@@ -302,13 +318,15 @@ export function search(chunks: readonly Chunk[], query: string, limit: number, m
   const total = [...weights.values()].reduce((sum, weight) => sum + weight, 0);
   const known = knownSecrets(chunks);
   const hits: RecallHit[] = [];
-  // Below the threshold it looks further down the ranking, up to ten times the limit.
-  for (const hit of ranked.slice(0, minCoverage > 0 ? limit * 10 : limit)) {
+  const found: Set<string>[] = [];
+  // For each chunk it leaves out it looks further down the ranking, up to ten times the limit.
+  for (const hit of ranked.slice(0, limit * 10)) {
     // The whole chunk first: what makes a secret recognizable may be outside the lines that are shown.
     const shown = excerpt(hideSecrets(hit.chunk.text, known), weights);
     const held = new Set(terms(shown));
     const coverage = [...weights].reduce((sum, [term, weight]) => sum + (held.has(term) ? weight : 0), 0) / total;
-    if (coverage < minCoverage) continue;
+    if (coverage < minCoverage || found.some((other) => shared(held, other) > SAME_EXCERPT)) continue;
+    found.push(held);
     hits.push({ ...hit, request: hideSecrets(hit.chunk.request, known), coverage, excerpt: shown });
     if (hits.length === limit) break;
   }
@@ -326,7 +344,8 @@ export function formatHits(hits: readonly RecallHit[], query: string, sessions: 
   let used = 0;
   for (const hit of hits) {
     const { timestamp, sessionId } = hit.chunk;
-    const what = hit.request ? `request: "${oneLine(hit.request, 120)}"` : 'compaction summary';
+    const asked = hit.chunk.pasted ? 'request, with pasted text' : 'request';
+    const what = hit.request ? `${asked}: "${oneLine(hit.request, 120)}"` : 'compaction summary';
     const block = `[${printed.length + 1}] ${timestamp?.slice(0, 10) ?? 'undated'} · session ${sessionId.slice(0, 8)} · ${what}\n${hit.excerpt}`;
     if (printed.length > 0 && used + estimateTokens(block) > maxTokens) break;
     printed.push(block);
