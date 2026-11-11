@@ -1,6 +1,6 @@
 import { closeSync, existsSync, fstatSync, openSync, readFileSync, readSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, relative, sep } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { claudeConfigDir } from '@arricurdai/transcripts';
 import type { ChunkCache } from './chunk-cache';
 import { isPrivateDir, openPrivateDir } from './private-dir';
@@ -12,6 +12,7 @@ import { formatHits, hideSecrets, knownSecrets, loadChunks, redact, search } fro
 // `handoff` (SessionStart) gives the session started with /clear a note on the one the guard stopped, with
 // the earlier context that matches the stopped prompt, and tells every new session how to run recall.
 // Both fail open: on any problem they print nothing and the prompt goes through.
+// `handoff --prepare` is not a hook: a tool runs it before it sends /clear, to have the same note without a stop.
 
 /** The last API call of a session, read from the end of its transcript. */
 export interface LastCall {
@@ -189,6 +190,25 @@ export function runGuard(stdin: string, options: { minTokens?: string }, io: Hoo
     return 0;
   } catch {
     return 0;
+  }
+}
+
+/**
+ * `handoff --prepare`: a tool that sends /clear itself asks for the note on a session first. It writes the marker
+ * the guard writes when it stops a prompt, with no prompt in it: the next session started with /clear in the same
+ * project gets the note, without the earlier context that matches a prompt.
+ */
+export function prepareHandoff(path: string, io: Pick<HookIO, 'stateDir' | 'now'>): { ok: true } | { ok: false; error: string } {
+  // The hook that reads the marker runs in another folder: the path it finds there must not depend on this one.
+  const transcript = resolve(path);
+  if (!existsSync(transcript)) return { ok: false, error: `no transcript at ${transcript}` };
+  if (!openPrivateDir(io.stateDir)) return { ok: false, error: `${io.stateDir} is not a private folder` };
+  try {
+    const context = lastCall(readTail(transcript))?.context ?? 0;
+    writeFileSync(markerPath(io.stateDir, transcript), JSON.stringify({ transcript, context, at: io.now().getTime() }), { mode: 0o600 });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
 

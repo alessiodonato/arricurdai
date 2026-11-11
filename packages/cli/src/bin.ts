@@ -5,7 +5,7 @@ import { Command } from 'commander';
 import pc from 'picocolors';
 import { type ChunkCache, defaultCacheDir } from './chunk-cache';
 import { type CompareCommandOptions, runCompare } from './compare';
-import { DEFAULT_MIN_TOKENS, DEFAULT_STATE_DIR, type HookIO, runGuard, runHandoff } from './guard';
+import { DEFAULT_MIN_TOKENS, DEFAULT_STATE_DIR, type HookIO, prepareHandoff, runGuard, runHandoff } from './guard';
 import { type RecallCommandOptions, runRecall } from './recall';
 import { type ProfileCommandOptions, runProfile } from './run-profile';
 import { runSetup, type SetupOptions } from './setup';
@@ -131,8 +131,16 @@ program
 program
   .command('handoff')
   .description('Claude Code SessionStart hook: after /clear, gives the new session a note on the one the guard stopped.')
-  .action(async () => {
-    process.exitCode = runHandoff(await readStdin(), hookIO());
+  .option('--prepare', 'not as a hook: write the note on a session for the next /clear in its project, as the guard does when it stops a prompt (for tools that send /clear themselves)')
+  .option('--transcript <path>', 'with --prepare: the transcript of the session')
+  .action(async (options: { prepare?: boolean; transcript?: string }) => {
+    if (!options.prepare) {
+      process.exitCode = runHandoff(await readStdin(), hookIO());
+      return;
+    }
+    const result = options.transcript ? prepareHandoff(options.transcript, hookIO()) : { ok: false as const, error: '--transcript <path> is required' };
+    if (!result.ok) process.stderr.write(`arricurdai handoff --prepare: ${result.error}\n`);
+    process.exitCode = result.ok ? 0 : 1;
   });
 
 /** Reads one line of the terminal. With no terminal to answer from, the answer is no. */

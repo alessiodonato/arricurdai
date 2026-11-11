@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { addToday, readSince, readStatus, renderStatus, renderSwiftBar, runStatus, type Status, type TodayStatus } from '../src/status';
+import { addToday, readSince, readStatus, renderStatus, renderSwiftBar, runStatus, type SessionToday, type Status, type TodayStatus } from '../src/status';
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -79,6 +79,36 @@ describe('readStatus', () => {
     // Each call: 2 + 2 × 1,000 written + 0.05 × read + 5 × 100 output, at $4 per million input tokens.
     const usd = [312_000, 88_000, 140_000].reduce((sum, context) => sum + ((2 + 2_000 + 0.05 * (context - 1_002) + 500) * 4) / 1e6, 0);
     expect(today.usd).toBeCloseTo(usd, 10);
+  });
+
+  it('gives each session its part of today, with its subagents: the parts add up to today', () => {
+    const { sessions, today } = readStatus({}, io(claudeDir()));
+    const parts = sessions.map((session) => session.today!);
+    // shop-api: its own call and the one of its subagent, of a model with no known price. Not yesterday's call.
+    expect(parts.map((part) => [part.calls, part.unpricedCalls])).toEqual([[2, 1], [1, 0], [1, 0]]);
+    expect(parts[0]!.tokens).toEqual({ input: 4, cacheWrite: 2_000, cacheRead: 312_000 + 20_000 - 2 * 1_002, output: 200 });
+    const sum = (pick: (part: SessionToday) => number): number => parts.reduce((total, part) => total + pick(part), 0);
+    expect(sum((part) => part.calls)).toBe(today.calls);
+    expect(sum((part) => part.unpricedCalls)).toBe(today.unpricedCalls);
+    for (const kind of ['input', 'cacheWrite', 'cacheRead', 'output'] as const) expect(sum((part) => part.tokens[kind])).toBe(today.tokens[kind]);
+    expect(sum((part) => part.usd)).toBeCloseTo(today.usd, 10);
+    // The stops of the guard stay in the total.
+    expect(parts[0]).not.toHaveProperty('guardStops');
+  });
+
+  it('leaves the part out of a session with no call today', () => {
+    // Half past midnight: the last call of blog was two hours ago, yesterday.
+    const early = new Date(2026, 9, 26, 0, 30, 0);
+    const dir = mkdtempSync(join(tmpdir(), 'arricurdai-status-'));
+    const path = join(dir, 'projects', '-work-blog', 'bbbb2222.jsonl');
+    mkdirSync(join(path, '..'), { recursive: true });
+    const at = new Date(early.getTime() - 2 * HOUR);
+    writeFileSync(path, `${assistant('/work/blog', at, 'msg-2', usage(88_000))}\n`);
+    utimesSync(path, at, at);
+    const { sessions, today } = readStatus({}, { env: { CLAUDE_CONFIG_DIR: dir }, now: () => early });
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]).not.toHaveProperty('today');
+    expect(today.calls).toBe(0);
   });
 
   it('keeps to the hours and the limit it is given', () => {

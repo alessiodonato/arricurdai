@@ -1,8 +1,8 @@
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { guardMessage, handoffNote, lastCall, runGuard, runHandoff } from '../src/guard';
+import { guardMessage, handoffNote, lastCall, prepareHandoff, runGuard, runHandoff } from '../src/guard';
 
 const HOUR = 3_600_000;
 const big = { input_tokens: 2, cache_creation_input_tokens: 1_000, cache_read_input_tokens: 299_000, cache_creation: { ephemeral_1h_input_tokens: 1_000, ephemeral_5m_input_tokens: 0 } };
@@ -130,6 +130,49 @@ describe.skipIf(process.platform === 'win32')('the state folder', () => {
     chmodSync(join(dir, 'state'), 0o777);
     runHandoff(start('clear'), io('2026-10-26T12:01:00Z'));
     expect(out).toHaveLength(1);
+  });
+});
+
+describe('handoff --prepare', () => {
+  it('a tool asks for the note, and the session started with /clear in the same project gets it', () => {
+    const { out, io, start, dir } = setup();
+    expect(prepareHandoff(join(dir, 'old.jsonl'), io('2026-10-26T12:00:00Z'))).toEqual({ ok: true });
+    expect(out).toEqual([]);
+    runHandoff(start('clear'), io('2026-10-26T12:00:05Z'));
+    expect(out).toHaveLength(1);
+    const context = JSON.parse(out[0]!).hookSpecificOutput.additionalContext as string;
+    expect(context).toContain('Add a retry to the upload client');
+    expect(context).toContain('Files changed: src/upload.ts');
+    expect(context).toContain('Retry added; tests are next.');
+    expect(context).toContain('300,002 tokens');
+    // No prompt was stopped: no earlier context that matches one.
+    expect(context).not.toContain('Earlier context that matches');
+    // Given once: the next /clear has no note.
+    runHandoff(start('clear'), io('2026-10-26T12:00:10Z'));
+    expect(out).toHaveLength(1);
+  });
+
+  it.skipIf(process.platform === 'win32')('writes the marker the guard writes, with no prompt, for the user alone', () => {
+    const { io, dir } = setup();
+    prepareHandoff(join(dir, 'old.jsonl'), io('2026-10-26T12:00:00Z'));
+    const [name] = readdirSync(join(dir, 'state'));
+    expect(name).toMatch(/^handoff-.*\.json$/);
+    expect(statSync(join(dir, 'state', name!)).mode & 0o777).toBe(0o600);
+    expect(JSON.parse(readFileSync(join(dir, 'state', name!), 'utf8'))).toEqual({ transcript: join(dir, 'old.jsonl'), context: 300_002, at: Date.parse('2026-10-26T12:00:00Z') });
+  });
+
+  it('says why when the transcript is not there, and writes nothing', () => {
+    const { io, dir } = setup();
+    expect(prepareHandoff(join(dir, 'missing.jsonl'), io('2026-10-26T12:00:00Z'))).toEqual({ ok: false, error: `no transcript at ${join(dir, 'missing.jsonl')}` });
+    expect(readdirSync(dir)).not.toContain('state');
+  });
+
+  it('a note asked too long ago is not given, as after the guard', () => {
+    const { out, io, start, dir } = setup();
+    expect(prepareHandoff(join(dir, 'old.jsonl'), io('2026-10-26T00:00:00Z'))).toEqual({ ok: true });
+    // Thirteen hours later: the marker is older than the twelve it lasts.
+    runHandoff(start('clear'), io('2026-10-26T13:00:00Z'));
+    expect(out).toEqual([]);
   });
 });
 

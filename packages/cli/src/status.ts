@@ -36,16 +36,22 @@ export interface SessionStatus {
   cacheLive: boolean;
   /** The cache expired and the context is large enough: the guard stops the next prompt. */
   guardWillStop: boolean;
+  /** Its part of `today`, with the calls of its subagents. Left out when it made no call today. */
+  today?: SessionToday;
 }
 
-export interface TodayStatus {
-  since: string;
+/** The calls of one session since midnight, its subagents included. */
+export interface SessionToday {
   calls: number;
   tokens: { input: number; cacheWrite: number; cacheRead: number; output: number };
   /** At API prices, for the calls of models with a known price. */
   usd: number;
   /** Calls of models with no known price, left out of `usd`. */
   unpricedCalls: number;
+}
+
+export interface TodayStatus extends SessionToday {
+  since: string;
   guardStops: number;
 }
 
@@ -62,6 +68,8 @@ interface TranscriptFile {
   mtimeMs: number;
   /** The transcript of a session, not of one of its subagents. */
   main: boolean;
+  /** The session it belongs to: the name of its file, or for a subagent the session that ran it. */
+  session: string;
 }
 
 const FIRST_CHUNK = 4 * 1024 * 1024;
@@ -95,15 +103,16 @@ export function recentTranscripts(claudeDir: string, since: number): TranscriptF
       const time = mtime(path);
       if (time === undefined || time < since) continue;
       const main = !entry.startsWith('agent-');
-      files.push({ path, mtimeMs: time, main });
+      const session = entry.slice(0, -'.jsonl'.length);
+      files.push({ path, mtimeMs: time, main, session });
       if (!main) continue;
       // A subagent writes only while its session runs, so an older session has no newer subagents.
-      const subagents = join(dir, entry.slice(0, -'.jsonl'.length), 'subagents');
+      const subagents = join(dir, session, 'subagents');
       for (const name of list(subagents)) {
         if (!name.endsWith('.jsonl')) continue;
         const sub = join(subagents, name);
         const subTime = mtime(sub);
-        if (subTime !== undefined && subTime >= since) files.push({ path: sub, mtimeMs: subTime, main: false });
+        if (subTime !== undefined && subTime >= since) files.push({ path: sub, mtimeMs: subTime, main: false, session });
       }
     }
   }
@@ -201,8 +210,13 @@ interface UsageFields {
 
 const count = (value: unknown): number => (typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0);
 
-/** Adds the calls and the stops of the guard that a part of a transcript holds since a time. */
-export function addToday(today: TodayStatus, text: string, since: number, main: boolean, seen: Set<string>): void {
+const noCalls = (): SessionToday => ({ calls: 0, tokens: { input: 0, cacheWrite: 0, cacheRead: 0, output: 0 }, usd: 0, unpricedCalls: 0 });
+
+/**
+ * Adds the calls and the stops of the guard that a part of a transcript holds since a time. Each call goes to
+ * the part of its session too, when one is given: a call counted once in the total is in one part only.
+ */
+export function addToday(today: TodayStatus, text: string, since: number, main: boolean, seen: Set<string>, session?: SessionToday): void {
   for (const line of text.split('\n')) {
     const isCall = line.includes('"usage"');
     const isStop = main && line.includes(GUARD_STOP);
@@ -231,15 +245,18 @@ export function addToday(today: TodayStatus, text: string, since: number, main: 
       output: count(usage.output_tokens),
     };
     if (tokens.input + tokens.cacheWrite + tokens.cacheRead + tokens.output === 0) continue;
-    today.calls++;
-    today.tokens.input += tokens.input;
-    today.tokens.cacheWrite += tokens.cacheWrite;
-    today.tokens.cacheRead += tokens.cacheRead;
-    today.tokens.output += tokens.output;
     const model = typeof message.model === 'string' ? message.model : '';
     const price = INPUT_PRICE[model];
-    if (price === undefined) today.unpricedCalls++;
-    else today.usd += (weightedCost(tokens, { ...DEFAULT_COST_PARAMS, r: CACHE_READ_SHARE[model] ?? DEFAULT_COST_PARAMS.r }) * price) / 1e6;
+    const usd = price === undefined ? undefined : (weightedCost(tokens, { ...DEFAULT_COST_PARAMS, r: CACHE_READ_SHARE[model] ?? DEFAULT_COST_PARAMS.r }) * price) / 1e6;
+    for (const sum of session ? [today, session] : [today]) {
+      sum.calls++;
+      sum.tokens.input += tokens.input;
+      sum.tokens.cacheWrite += tokens.cacheWrite;
+      sum.tokens.cacheRead += tokens.cacheRead;
+      sum.tokens.output += tokens.output;
+      if (usd === undefined) sum.unpricedCalls++;
+      else sum.usd += usd;
+    }
   }
 }
 
@@ -264,7 +281,7 @@ export function readStatus(options: StatusCommandOptions, io: Pick<CommandIO, 'e
   for (const file of files) {
     if (!file.main || file.mtimeMs < now.getTime() - hours * 3_600_000) continue;
     try {
-      const status = sessionStatus(basename(file.path, '.jsonl'), readTail(file.path), now.getTime(), minTokens, firstCwd(file.path));
+      const status = sessionStatus(file.session, readTail(file.path), now.getTime(), minTokens, firstCwd(file.path));
       if (status) sessions.push(status);
     } catch {
       // A transcript that cannot be read says nothing: the others still do.
@@ -272,24 +289,25 @@ export function readStatus(options: StatusCommandOptions, io: Pick<CommandIO, 'e
   }
   sessions.sort((a, b) => Date.parse(b.lastCallAt) - Date.parse(a.lastCallAt));
 
-  const today: TodayStatus = {
-    since: new Date(midnight).toISOString(),
-    calls: 0,
-    tokens: { input: 0, cacheWrite: 0, cacheRead: 0, output: 0 },
-    usd: 0,
-    unpricedCalls: 0,
-    guardStops: 0,
-  };
+  const today: TodayStatus = { since: new Date(midnight).toISOString(), ...noCalls(), guardStops: 0 };
+  // The same reading gives the part of each session: no transcript is read again for it.
+  const parts = new Map<string, SessionToday>();
   const seen = new Set<string>();
   for (const file of files) {
     if (file.mtimeMs < midnight) continue;
+    const part = parts.get(file.session) ?? noCalls();
+    parts.set(file.session, part);
     try {
-      addToday(today, readSince(file.path, midnight), midnight, file.main, seen);
+      addToday(today, readSince(file.path, midnight), midnight, file.main, seen, part);
     } catch {
       // As above.
     }
   }
-  return { generatedAt: now.toISOString(), hours, minTokens, sessions: sessions.slice(0, limit), today };
+  const listed = sessions.slice(0, limit).map((session) => {
+    const part = parts.get(session.sessionId);
+    return part && part.calls > 0 ? { ...session, today: part } : session;
+  });
+  return { generatedAt: now.toISOString(), hours, minTokens, sessions: listed, today };
 }
 
 /** 312,000 as 312k, 2,140,000 as 2.1M. */
