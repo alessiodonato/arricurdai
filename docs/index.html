@@ -449,7 +449,7 @@ footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; g
     <article class="card tool reveal">
       <span class="tag">hook · SessionStart</span>
       <h3>handoff: start fresh, keep the thread</h3>
-      <p>After that <code>/clear</code>, it gives the new session a note built from the transcript, without a model: the last requests, the files changed, the open tasks and the last reply. It also tells every new session how to run <code>recall</code>, which searches past sessions.</p>
+      <p>After that <code>/clear</code>, it gives the new session a note built from the transcript, without a model: the last requests, the files changed, the open tasks and the last reply. It also tells every new session how to run <code>recall</code>, which searches past sessions. A tool that sends <code>/clear</code> itself, such as <a href="https://github.com/alessiodonato/forchetta">Forchetta</a>, asks for the note first with <code>handoff --prepare</code>.</p>
       <div class="code"><pre><code>arricurdai handoff</code></pre></div>
     </article>
   </div>
@@ -529,10 +529,10 @@ arricurdai profile --project /path/to/project</code></pre></div>
   <div class="roadmap">
     <article class="card phase done reveal"><span class="status">✓ Done</span><h3>Profile</h3><p>The price-weighted cost of every session, where it goes, and what other compaction policies would have saved.</p></article>
     <article class="card phase done reveal"><span class="status">✓ Done</span><h3>Guard and handoff</h3><p>No cache rewrite after a pause: a new session with a note, chosen by you.</p></article>
-    <article class="card phase done reveal"><span class="status">✓ Done</span><h3>Recall</h3><p><code>arricurdai recall "&lt;words&gt;"</code> searches past sessions, locally and without a model. The agent can keep a small context and still find what was decided.</p></article>
+    <article class="card phase done reveal"><span class="status">✓ Done</span><h3>Recall</h3><p><code>arricurdai recall "&lt;words&gt;"</code> searches past sessions, locally and without a model. The agent can keep a small context and still find what was decided. It reads each transcript once, so a search takes a fraction of a second.</p></article>
     <article class="card phase done reveal"><span class="status">✓ Done</span><h3>Compare</h3><p><code>arricurdai compare --since &lt;date&gt;</code> compares the sessions before and after a change, and replays them to estimate what the auto-compact limit and the guard each did.</p></article>
     <article class="card phase done reveal"><span class="status">✓ Done</span><h3>Status</h3><p><code>arricurdai status</code> lists the sessions of the last hours: how large their context is, when their cache expires, and what today cost. Also in the macOS menu bar.</p></article>
-    <article class="card phase next reveal"><span class="status">✓ New</span><h3>A quicker recall</h3><p>It reads each transcript once and keeps what it read in a private cache, so a search takes a fraction of a second. A pasted prompt counts as a request, and a passage is shown once.</p></article>
+    <article class="card phase next reveal"><span class="status">✓ New</span><h3>For the tools around Claude Code</h3><p><a href="https://github.com/alessiodonato/forchetta">Forchetta</a>, a control centre for sessions that run side by side, reads its numbers from arricurdAI. <code>handoff --prepare</code> writes the note before a <code>/clear</code> it sends, and <code>status --json</code> gives each session its part of the day.</p></article>
   </div>
 </section>
 
@@ -544,6 +544,7 @@ arricurdai profile --project /path/to/project</code></pre></div>
       <a data-repo="/blob/main/docs/guide.md" href="#">Guide</a>
       <a data-repo="/blob/main/docs/transcript-schema.md" href="#">Transcript schema</a>
       <a data-repo="/tree/main/experiments/context" href="#">Experiment</a>
+      <a href="https://github.com/alessiodonato/forchetta">Forchetta</a>
       <a data-repo="/blob/main/LICENSE" href="#">License</a>
     </div>
   </div>

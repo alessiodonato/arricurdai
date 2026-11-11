@@ -24,6 +24,7 @@ arricurdAI shows where your tokens go and keeps the context small, **without los
 [Proof](#-proof) ·
 [Get started](#-get-started) ·
 [FAQ](#-faq) ·
+[Forchetta](#-used-by-forchetta) ·
 [Reference](#-reference) ·
 [🇮🇹 Italiano](#-in-breve-in-italiano)
 
@@ -323,6 +324,19 @@ Remove the two hooks from `settings.json`. arricurdAI changes nothing else in Cl
 
 </details>
 
+## 🍴 Used by Forchetta
+
+[Forchetta](https://github.com/alessiodonato/forchetta) is a local control centre for the Claude Code sessions that run side by side on macOS: one box for each session, with its state, its context, its cache and its cost. It does not work those numbers out again: it reads them from arricurdAI.
+
+| Forchetta shows | It comes from |
+| --- | --- |
+| The context of each session, the countdown of its cache and the `guard` badge | [`arricurdai status --json`](#status-your-sessions-at-a-glance) |
+| What today cost, and the tokens each session used today | `today`, for the day and for each session, in `status --json` |
+| The note a session gets after a `/clear` sent from its box | [`arricurdai handoff --prepare`](#guard-no-cache-rewrite-after-a-pause) |
+| The search in past sessions | [`arricurdai recall`](#recall-find-what-earlier-sessions-said) |
+
+It finds arricurdAI in the `PATH` or in the hooks, and adds its own hooks next to them. Its README is in Italian, and it has a [website](https://alessiodonato.github.io/forchetta/).
+
 ## 📖 Reference
 
 ### Profile: see where the tokens go
@@ -569,6 +583,19 @@ Two hooks act on it:
 
 The settings are in [Get started](#-get-started). Both hooks read local files only, and on any problem they let the prompt through.
 
+A tool that sends `/clear` itself, as [Forchetta](#-used-by-forchetta) does, can ask for the same note first, with no stop of the guard:
+
+```sh
+arricurdai handoff --prepare --transcript <path>
+```
+
+It prints nothing and exits with 0. The next session started with `/clear` in the same project gets the note from the `handoff` hook, within twelve hours, without the passages that match a prompt: there is no stopped prompt. With no `--transcript`, or with a transcript that is not there, it says why and exits with 1.
+
+| Option | What it does |
+| --- | --- |
+| `--prepare` | Not as a hook: writes the note on a session for the next `/clear` in its project. |
+| `--transcript <path>` | With `--prepare`: the transcript of the session. |
+
 ### Recall: find what earlier sessions said
 
 A small context is cheaper, but the agent loses what it no longer sees. `arricurdai recall` lets it look that up:
@@ -725,8 +752,29 @@ The `1m` in the name refreshes it every minute.
 | `--hours <n>` | 24 | Sessions active in the last n hours. |
 | `--limit <n>` | 10 | Most sessions to show. |
 | `--min-tokens <n>` | 100,000 | Smallest context the guard stops for, as in `guard --min-tokens`. |
-| `--json` | | The status as JSON. |
+| `--json` | | The status as JSON. Each session has its part of the day in `today`. |
 | `--swiftbar` | | The status as a SwiftBar or xbar menu. |
+
+With `--json`, each session that made a call today has a `today` of its own: its calls, its tokens and their cost since midnight, with those of its subagents. These parts come from the same reading as the total, and add up to it when every session of the day is listed. The stops of the guard are in the total only.
+
+```json
+{
+  "sessionId": "aaaa1111",
+  "project": "/work/shop-api",
+  "model": "claude-opus-5-5",
+  "context": 312000,
+  "lastCallAt": "2026-10-26T10:40:00.000Z",
+  "cacheExpiresAt": "2026-10-26T11:40:00.000Z",
+  "cacheLive": true,
+  "guardWillStop": false,
+  "today": {
+    "calls": 2,
+    "tokens": { "input": 4, "cacheWrite": 2000, "cacheRead": 329996, "output": 200 },
+    "usd": 0.0722076,
+    "unpricedCalls": 1
+  }
+}
+```
 
 ## 🧭 Roadmap
 
@@ -742,6 +790,7 @@ The `1m` in the name refreshes it every minute.
 - [x] **Pasted prompts and no repeated passages** in `recall` and in the note after `/clear`
 - [x] **`recall` reads each transcript once**, and keeps what it read in a private cache
 - [x] **The prices of more models** in the guard and in `status`, and a state folder for each user
+- [x] **For the tools around Claude Code**, such as [Forchetta](https://github.com/alessiodonato/forchetta): `handoff --prepare` writes the note before a `/clear` they send, and `status --json` gives each session its part of the day
 - [ ] `profile` recommends an auto-compact window for your sessions
 - [ ] Measurements on more projects
 
@@ -779,6 +828,7 @@ pnpm test    # type checks and Vitest, for every package
 - 🔎 **`recall`** permette a Claude di cercare nelle sessioni precedenti cosa è stato chiesto, deciso e cambiato.
 - ⚖️ **`compare`** confronta le sessioni prima e dopo una data, e stima quanto hanno contato il limite di compattazione e il guard.
 - 🕒 **`status`** mostra le sessioni delle ultime ore, quanto è grande il loro contesto e quando scade la cache. Con SwiftBar o xbar lo vedi nella barra dei menu del Mac.
+- 🍴 **[Forchetta](https://github.com/alessiodonato/forchetta)**, il centro di controllo per le sessioni Claude Code in parallelo su macOS, legge da arricurdAI contesto, cache e costi, e gli chiede la nota prima di un `/clear`.
 
 Tutto gira sul tuo computer: nessuna chiamata di rete, nessuna telemetria, nessun modello. Password e chiavi trovate nelle sessioni compaiono come `[redacted]`. Il limite di compattazione è un'impostazione di Claude Code e funziona anche senza arricurdAI: sulle sessioni lunghe può fare da solo gran parte del risparmio. Su un progetto reale il costo a chiamata è sceso del 27%, quasi tutto per merito del limite: secondo le stime di `compare`, senza limite le stesse sessioni sarebbero costate il 41% in più, senza guard l'8%. Vale per quel progetto, con lavori diversi prima e dopo. Per installarlo, segui [Get started](#-get-started).
 
