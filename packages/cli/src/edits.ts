@@ -179,7 +179,8 @@ export async function readEdits(claudeDir: string, now: Date, days: number): Pro
       }
     }
   }
-  const start = (index: number): string => new Date(now.getTime() - (index + 1) * 7 * DAY).toISOString().slice(0, 10);
+  // The oldest week is shorter when the days are not a multiple of 7: it starts where the days start.
+  const start = (index: number): string => new Date(Math.max(since, now.getTime() - (index + 1) * 7 * DAY)).toISOString().slice(0, 10);
   return {
     generatedAt: now.toISOString(),
     days,

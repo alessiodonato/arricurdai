@@ -80,6 +80,14 @@ describe('the edits of the last days', () => {
     ]);
   });
 
+  it('start the oldest week where the days start, when they are not a multiple of 7', async () => {
+    const report = await readEdits(claudeDir(lines), NOW, 10);
+    expect(report.weeks).toEqual([
+      { from: '2026-10-16', tools: 0, shell: 0, scripts: 1 },
+      { from: '2026-10-19', tools: 2, shell: 2, scripts: 0 },
+    ]);
+  });
+
   it('are shown as counts only: no text, file or project name', async () => {
     const text = renderEdits(await readEdits(claudeDir(lines), NOW, 14));
     expect(text).toContain('with Edit, Write, MultiEdit or NotebookEdit');
