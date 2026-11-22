@@ -99,6 +99,7 @@ Claude Code resends everything it has read and said so far on every call. The pr
 | [`handoff`](#guard-no-cache-rewrite-after-a-pause) | Hook, when a session starts | After `/clear`, a note on the old session. In every session, one line on how to run `recall`. |
 | [`recall`](#recall-find-what-earlier-sessions-said) | Run by Claude | Searches the earlier sessions of the project, locally and without a model. |
 | [`status`](#status-your-sessions-at-a-glance) | When you run it, or every minute in the menu bar | The sessions of the last hours, how large their context is and when their cache expires. |
+| [`edits`](#edits-how-your-files-were-changed) | When you run it | How your sessions changed files: with the edit tools, with a shell command, or inside a script. |
 
 <details>
 <summary><b>📝 See the note a fresh session receives</b></summary>
@@ -776,6 +777,27 @@ With `--json`, each session that made a call today has a `today` of its own: its
 }
 ```
 
+### Edits: how your files were changed
+
+`arricurdai edits` counts how the Claude Code sessions of every project changed the files of their project in the last 30 days: with the edit tools (`Edit`, `Write`, `MultiEdit`, `NotebookEdit`), with a shell command whose line names the file (`sed -i`, `cat > file <<'EOF'`, `>`, `tee`, `cp`, `mv`, `rm`), or inside a script that names the file in its code (`python3 - <<'PY'`, `node -e`). In auto mode Claude often edits with Bash, so a hook on the edit tools, a file guard or a review step that only looks at `Edit` and `Write` misses part of the changes: this tells you how much.
+
+```sh
+arricurdai edits             # the last 30 days
+arricurdai edits --days 7
+arricurdai edits --json
+```
+
+```text
+How Claude Code changed the files of your projects in the last 30 days
+42 sessions, 30 of them in auto mode
+
+  with Edit, Write, MultiEdit or NotebookEdit      310   70%
+  with a shell command (sed -i, >, tee, cp…)       105   24%
+  inside a script, named in its code                28    6%
+```
+
+A file of the project is one inside the folder the session ran in, outside `.git` and `node_modules`: a log in `/tmp` does not count. A script whose code writes a file through a variable, and a command that cannot be read without running it (`$(…)`, a subshell), are counted apart, on lines of their own. It prints only counts: no text of a session, no file name, no project name.
+
 ## 🧭 Roadmap
 
 - [x] **`profile`**: where the cost goes, and what other compaction policies would have saved
@@ -791,6 +813,7 @@ With `--json`, each session that made a call today has a `today` of its own: its
 - [x] **`recall` reads each transcript once**, and keeps what it read in a private cache
 - [x] **The prices of more models** in the guard and in `status`, and a state folder for each user
 - [x] **For the tools around Claude Code**, such as [Forchetta](https://github.com/alessiodonato/forchetta): `handoff --prepare` writes the note before a `/clear` they send, and `status --json` gives each session its part of the day
+- [x] **`edits`**: how many of your edits went through Bash, where hooks on the edit tools don't see them
 - [ ] `profile` recommends an auto-compact window for your sessions
 - [ ] Measurements on more projects
 
@@ -828,6 +851,7 @@ pnpm test    # type checks and Vitest, for every package
 - 🔎 **`recall`** permette a Claude di cercare nelle sessioni precedenti cosa è stato chiesto, deciso e cambiato.
 - ⚖️ **`compare`** confronta le sessioni prima e dopo una data, e stima quanto hanno contato il limite di compattazione e il guard.
 - 🕒 **`status`** mostra le sessioni delle ultime ore, quanto è grande il loro contesto e quando scade la cache. Con SwiftBar o xbar lo vedi nella barra dei menu del Mac.
+- ✏️ **`edits`** conta come le sessioni hanno cambiato i file dei progetti: con gli strumenti di modifica, con un comando di shell (`sed -i`, `>`), o dentro uno script. In modalità auto una parte passa da Bash, dove un hook su `Edit` e `Write` non la vede.
 - 🍴 **[Forchetta](https://github.com/alessiodonato/forchetta)**, il centro di controllo per le sessioni Claude Code in parallelo su macOS, legge da arricurdAI contesto, cache e costi, e gli chiede la nota prima di un `/clear`.
 
 Tutto gira sul tuo computer: nessuna chiamata di rete, nessuna telemetria, nessun modello. Password e chiavi trovate nelle sessioni compaiono come `[redacted]`. Il limite di compattazione è un'impostazione di Claude Code e funziona anche senza arricurdAI: sulle sessioni lunghe può fare da solo gran parte del risparmio. Su un progetto reale il costo a chiamata è sceso del 27%, quasi tutto per merito del limite: secondo le stime di `compare`, senza limite le stesse sessioni sarebbero costate il 41% in più, senza guard l'8%. Vale per quel progetto, con lavori diversi prima e dopo. Per installarlo, segui [Get started](#-get-started).

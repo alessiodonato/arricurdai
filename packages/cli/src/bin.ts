@@ -5,6 +5,7 @@ import { Command } from 'commander';
 import pc from 'picocolors';
 import { type ChunkCache, defaultCacheDir } from './chunk-cache';
 import { type CompareCommandOptions, runCompare } from './compare';
+import { type EditsCommandOptions, runEdits } from './edits';
 import { DEFAULT_MIN_TOKENS, DEFAULT_STATE_DIR, type HookIO, prepareHandoff, runGuard, runHandoff } from './guard';
 import { type RecallCommandOptions, runRecall } from './recall';
 import { type ProfileCommandOptions, runProfile } from './run-profile';
@@ -48,6 +49,22 @@ program
   .option('--transcripts <dir>', 'transcript folder of the project (default: found from the project path)')
   .action(async (options: CompareCommandOptions) => {
     process.exitCode = await runCompare(options, {
+      cwd: process.cwd(),
+      env: process.env,
+      stdout: (text) => process.stdout.write(text),
+      stderr: (text) => process.stderr.write(text),
+      now: () => new Date(),
+      colors: pc.isColorSupported,
+    });
+  });
+
+program
+  .command('edits')
+  .description('Show how Claude Code changed the files of your projects in the last days: with the edit tools, with a shell command, or inside a script. Reads local files only, and prints only counts.')
+  .option('--days <n>', 'the last n days', '30')
+  .option('--json', 'print the counts as JSON')
+  .action(async (options: EditsCommandOptions) => {
+    process.exitCode = await runEdits(options, {
       cwd: process.cwd(),
       env: process.env,
       stdout: (text) => process.stdout.write(text),
