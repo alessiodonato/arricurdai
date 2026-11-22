@@ -80,7 +80,14 @@ const NAMED_IN_CODE = [
 /** The files a script names in its code where it writes them, absolute. */
 function namedInCode(code: string, cwd: string): string[] {
   const found: string[] = [];
-  for (const pattern of NAMED_IN_CODE) for (const match of code.matchAll(pattern)) found.push(isAbsolute(match[2]!) ? match[2]! : `${cwd}/${match[2]!}`);
+  for (const pattern of NAMED_IN_CODE) {
+    for (const match of code.matchAll(pattern)) {
+      const name = match[2]!;
+      // A path built in the code (${dir}/a.json, out_{}.txt) does not say which file: as if not named.
+      if (/[${}]/.test(name)) continue;
+      found.push(isAbsolute(name) || name.startsWith('~') ? name : `${cwd}/${name}`);
+    }
+  }
   return found;
 }
 
@@ -94,6 +101,9 @@ function scriptWrites(command: string, cwd: string): 'script' | 'script-unnamed'
 
 /** A file of the project: inside the folder the session ran in, outside .git and node_modules. */
 function inProject(path: string, cwd: string): boolean {
+  // A path left as written (~/notes.md, $OUT/a.txt) points who knows where: relative() would read it against the
+  // folder arricurdai runs in, and the count would change with it.
+  if (!isAbsolute(path) || !isAbsolute(cwd)) return false;
   const rel = relative(cwd, path);
   if (!rel || rel.startsWith('..') || isAbsolute(rel)) return false;
   const parts = rel.split('/');

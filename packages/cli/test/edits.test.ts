@@ -47,6 +47,17 @@ describe('a Bash command', () => {
     expect(classifyBash("python3 -c 'print(1)'", SHOP)).toBeUndefined();
   });
 
+  it('is nothing when its path is left as written (~, $VAR), wherever arricurdai runs', () => {
+    const here = process.cwd();
+    expect(classifyBash('echo x > ~/notes.md', here)).toBeUndefined();
+    expect(classifyBash('echo x > $OUT/a.txt', here)).toBeUndefined();
+    expect(classifyBash("python3 -c \"open('~/notes.md', 'w').write('x')\"", here)).toBeUndefined();
+    expect(classifyBash("node -e \"require('fs').writeFileSync(`${dir}/a.json`, '{}')\"", here)).toBe('script-unnamed');
+    expect(classifyBash("cd ~/x && sed -i '' 's/a/b/' notes.md", here)).toBeUndefined();
+    expect(classifyBash('cd $DIR && echo x > notes.md', here)).toBeUndefined();
+    expect(classifyBash('echo x > notes.md', here)).toBe('shell');
+  });
+
   it('cannot be told when it needs running: $(...)', () => {
     expect(classifyBash('echo $(date) > when.txt', SHOP)).toBe('unreadable');
   });

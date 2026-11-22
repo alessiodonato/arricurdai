@@ -152,6 +152,9 @@ export function parseCommandLine(command: string): SimpleCommand[] | undefined {
 /** Resolves a path written in a command against the directory the command ran in. */
 export function resolvePath(dir: string, path: string): string {
   if (path.startsWith('~') || path.startsWith('$')) return path;
+  // After `cd ~/x` or `cd $DIR` the directory is not known: keep the path relative to it (~/x/a.ts), never read it
+  // against the folder this process runs in.
+  if (!posix.isAbsolute(dir) && !posix.isAbsolute(path)) return posix.join(dir, path);
   return posix.resolve(dir, path);
 }
 
