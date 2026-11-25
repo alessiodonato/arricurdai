@@ -582,8 +582,8 @@ The prompt cache keeps the context of a main session for an hour. After a longer
 
 Two hooks act on it:
 
-- **`arricurdai guard`** runs when you send a prompt. If the cache of a session larger than 100,000 tokens has expired, it stops the prompt once and says what going on would cost. Run `/clear` to start fresh, or send the prompt again to go on. The prompt is not lost with `/clear`: `handoff` gives it back. `--min-tokens <n>` changes the smallest session worth stopping for.
-- **`arricurdai handoff`** runs when a session starts. After that `/clear`, it gives the new session a note on the old one, built from the transcript without a model: the last requests, the files changed, the open tasks and the last reply. Temporary files are counted for each folder, not listed. It gives back the prompt that was stopped, which `/clear` wipes from the screen: the new session gets it as not sent yet, so you tell Claude to go on with it, and you see it again as a message of the hook. A prompt too long for the note, since Claude Code cuts the text of a hook at 10,000 characters, is kept whole in a file of the state folder, with its start in the note. It adds up to three passages of earlier sessions that match the prompt you were about to send, about 800 tokens at most: only those whose excerpt holds at least 40% of the prompt, rare words weighing more, so that a loose match does not fill the note with noise. In every new session, and after a compaction, it adds one line on how to run [`recall`](#recall-find-what-earlier-sessions-said).
+- **`arricurdai guard`** runs when you send a prompt. If the cache of a session larger than 100,000 tokens has expired, it stops the prompt once and says what going on would cost. Run `/clear` to start fresh, or send the prompt again to go on. The prompt is not lost with `/clear`: `handoff` puts it in the note the new session gets, and the guard says so when it stops you. `--min-tokens <n>` changes the smallest session worth stopping for.
+- **`arricurdai handoff`** runs when a session starts. After that `/clear`, it gives the new session a note on the old one, built from the transcript without a model: the last requests, the files changed, the open tasks and the last reply. Temporary files are counted for each folder, not listed. The note holds the prompt that was stopped, as not sent yet: `/clear` wipes it from the screen, and you need not type it again, you tell Claude to go on with it. It does not come back on the screen: Ctrl+O shows it, in the message of the hook. A prompt too long for the note, since Claude Code cuts the text of a hook at 10,000 characters, is kept whole in a file of the state folder, with its start in the note. It adds up to three passages of earlier sessions that match the prompt you were about to send, about 800 tokens at most: only those whose excerpt holds at least 40% of the prompt, rare words weighing more, so that a loose match does not fill the note with noise. In every new session, and after a compaction, it adds one line on how to run [`recall`](#recall-find-what-earlier-sessions-said).
 
 The settings are in [Get started](#-get-started). Both hooks read local files only, and on any problem they let the prompt through.
 
@@ -817,7 +817,7 @@ A file of the project is one inside the folder the session ran in, outside `.git
 - [x] **The prices of more models** in the guard and in `status`, and a state folder for each user
 - [x] **For the tools around Claude Code**, such as [Forchetta](https://github.com/alessiodonato/forchetta): `handoff --prepare` writes the note before a `/clear` they send, and `status --json` gives each session its part of the day
 - [x] **`edits`**: how many of your edits went through Bash, where hooks on the edit tools don't see them
-- [x] **The stopped prompt after `/clear`**: the new session gets it as not sent yet, and you see it again
+- [x] **The stopped prompt after `/clear`**: the new session gets it as not sent yet, and Ctrl+O shows it to you
 - [ ] `profile` recommends an auto-compact window for your sessions
 - [ ] Measurements on more projects
 
@@ -851,7 +851,7 @@ pnpm test    # type checks and Vitest, for every package
 
 - 📊 **`profile`** mostra dove vanno i token delle tue sessioni.
 - ✋ **`guard`** ferma il primo messaggio a una sessione grande dopo una pausa, e ti dice quanto costerebbe continuare.
-- 📝 **`handoff`** dà alla sessione nuova, dopo `/clear`, una nota su quella vecchia, e ti restituisce il prompt che era stato fermato.
+- 📝 **`handoff`** dà alla sessione nuova, dopo `/clear`, una nota su quella vecchia, con dentro il prompt che era stato fermato: a Claude basta dire di andare avanti.
 - 🔎 **`recall`** permette a Claude di cercare nelle sessioni precedenti cosa è stato chiesto, deciso e cambiato.
 - ⚖️ **`compare`** confronta le sessioni prima e dopo una data, e stima quanto hanno contato il limite di compattazione e il guard.
 - 🕒 **`status`** mostra le sessioni delle ultime ore, quanto è grande il loro contesto e quando scade la cache. Con SwiftBar o xbar lo vedi nella barra dei menu del Mac.

@@ -56,6 +56,12 @@ describe('guardMessage', () => {
     expect(guardMessage(call, 2 * HOUR, 100_000)).toContain('about $2.40');
   });
 
+  it('says, while the prompt is still on the screen, that the note after /clear will hold it', () => {
+    const lines = guardMessage(call, 2 * HOUR, 100_000)!.split('\n');
+    expect(lines).toHaveLength(3);
+    expect(lines[2]).toBe('Run /clear to start a new session: arricurdai will give it a note on this one, with this prompt in it. Tell Claude there to go on with it. Or send the prompt again to go on here.');
+  });
+
   it('knows the price of the other models', () => {
     // 300,000 tokens × 2 × $8 per million for Claude Fable 5.2, and × $0.10 for Claude Haiku 5.5.
     expect(guardMessage({ ...call, model: 'claude-fable-5-2' }, 2 * HOUR, 100_000)).toContain('about $4.80');
@@ -139,7 +145,7 @@ describe('guard and handoff hooks', () => {
     expect(out).toHaveLength(1);
   });
 
-  it('gives the stopped prompt back after /clear: to the new session as not sent yet, and to the user', () => {
+  it('gives the stopped prompt after /clear: to the new session as not sent yet, and in a message for the user', () => {
     const { out, io, start, dir } = setup();
     const text = 'Add a retry to the upload client of the reports too.\nUse Password: Example2026 on staging.';
     runGuard(stop(dir, 'old', text), {}, io('2026-10-26T12:00:00Z'));

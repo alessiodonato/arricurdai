@@ -11,7 +11,8 @@ import { formatHits, hideSecrets, knownSecrets, loadChunks, redact, search } fro
 // prompt cache of a large session expire: going on would write the whole context to the cache again.
 // `handoff` (SessionStart) gives the session started with /clear a note on the one the guard stopped, with
 // the stopped prompt and the earlier context that matches it, and tells every new session how to run recall.
-// The user sees the stopped prompt again too: /clear wipes it from the screen.
+// /clear wipes the stopped prompt from the screen, and the message `handoff` prints for the user shows only in the
+// view of Ctrl+O: so the guard says, before the /clear, that the prompt will be in the note.
 // Both fail open: on any problem they print nothing and the prompt goes through.
 // `handoff --prepare` is not a hook: a tool runs it before it sends /clear, to have the same note without a stop.
 
@@ -147,7 +148,7 @@ export function guardMessage(call: LastCall, now: number, minTokens: number): st
   return [
     `arricurdai: this session was idle for ${duration(idle)} and its prompt cache expired.`,
     `Your prompt would write its ${call.context.toLocaleString('en-US')} tokens of context to the cache again${usd}, and every later call would read them.`,
-    'Run /clear to start a new session: arricurdai will give it a note on this one. Or send the prompt again to go on here.',
+    'Run /clear to start a new session: arricurdai will give it a note on this one, with this prompt in it. Tell Claude there to go on with it. Or send the prompt again to go on here.',
   ].join('\n');
 }
 
@@ -319,8 +320,8 @@ const STOPPED_FOR_AGENT = 'The prompt the user was about to send when the previo
 const STOPPED_FOR_USER = 'arricurdai: the prompt that was stopped is in the note this session got. Tell Claude to go on with it, or send another prompt.';
 
 /**
- * The stopped prompt, for the new session and for the user, who lost it from the screen with /clear. Whole when it
- * fits in `room` characters; otherwise its start, and the whole of it in a file.
+ * The stopped prompt, for the new session and for the user, who lost it from the screen with /clear and reads the
+ * message with Ctrl+O. Whole when it fits in `room` characters; otherwise its start, and the whole of it in a file.
  */
 function stoppedPrompt(prompt: string, room: number, file: string): { context: string; message: string } {
   rmSync(file, { force: true });
@@ -336,7 +337,7 @@ function stoppedPrompt(prompt: string, room: number, file: string): { context: s
 
 /**
  * The note on the session the guard stopped, the prompt it stopped and the earlier context that matches it, in at
- * most `room` characters. The message is for the user: the stopped prompt again.
+ * most `room` characters. The message is for the user: the stopped prompt again, which Ctrl+O shows.
  */
 function afterClear(input: HookInput & { transcript_path: string }, io: HookIO, room: number): { parts: string[]; message?: string } {
   const marker = markerPath(io.stateDir, input.transcript_path);
@@ -365,7 +366,8 @@ function afterClear(input: HookInput & { transcript_path: string }, io: HookIO, 
 
 /**
  * SessionStart hook. After a /clear that follows a stopped prompt, prints the note as additional context, and the
- * stopped prompt as a message for the user. On every start it also tells the agent how to search earlier sessions.
+ * stopped prompt as a message for the user: after a /clear Claude Code keeps that message in the transcript and shows
+ * it only in the view of Ctrl+O. On every start it also tells the agent how to search earlier sessions.
  */
 export function runHandoff(stdin: string, io: HookIO): number {
   try {
