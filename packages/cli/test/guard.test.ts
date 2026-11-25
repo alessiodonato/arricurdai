@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -93,6 +93,42 @@ describe('guard and handoff hooks', () => {
     runGuard(prompt, {}, io('2026-10-26T12:00:30Z'));
     runHandoff(start('clear'), io('2026-10-26T12:01:00Z'));
     expect(out).toHaveLength(1);
+  });
+
+  it('forgets the stopped prompt when it is sent again after a call the session made by itself', () => {
+    const { out, io, start, dir } = setup();
+    runGuard(stop(dir, 'old', 'Now write the tests of the retry.'), {}, io('2026-10-26T12:00:00Z'));
+    expect(out).toHaveLength(1);
+    // A task in the background ends: the session makes a call, and its cache lives again.
+    appendFileSync(join(dir, 'old.jsonl'), `${assistant('2026-10-26T12:00:30Z', big, [{ type: 'text', text: 'The build is done.' }])}\n`);
+    runGuard(stop(dir, 'old', 'Now write the tests of the retry.'), {}, io('2026-10-26T12:01:00Z'));
+    // It went through, so it is not waiting for a /clear: the next one has no note that calls it never sent.
+    runHandoff(start('clear'), io('2026-10-26T12:05:00Z'));
+    expect(out).toHaveLength(1);
+  });
+
+  it('keeps the stopped prompt of a session when another session of the project goes on', () => {
+    const { out, io, start, dir } = setup();
+    // The other session is in use: its prompt goes through.
+    writeFileSync(join(dir, 'other.jsonl'), `${[user('2026-10-26T11:58:00Z', 'Rename the upload client'), assistant('2026-10-26T11:59:00Z', big, [{ type: 'text', text: 'Renamed.' }])].join('\n')}\n`);
+    runGuard(stop(dir, 'old', 'Now write the tests of the retry.'), {}, io('2026-10-26T12:00:00Z'));
+    runGuard(JSON.stringify({ session_id: 'other', transcript_path: join(dir, 'other.jsonl'), cwd: '/repo', hook_event_name: 'UserPromptSubmit', prompt: 'thanks' }), {}, io('2026-10-26T12:00:30Z'));
+    expect(out).toHaveLength(1);
+    runHandoff(start('clear'), io('2026-10-26T12:01:00Z'));
+    expect((JSON.parse(out[1]!) as Printed).hookSpecificOutput.additionalContext).toContain('It was never sent: act on it only when the user tells you to go on with it.\nNow write the tests of the retry.');
+  });
+
+  it('keeps the prompt stopped last in the project when a session stopped before it sends its own again', () => {
+    const { out, io, start, dir } = setup();
+    writeFileSync(join(dir, 'other.jsonl'), `${[user('2026-10-26T09:10:00Z', 'Rename the upload client'), assistant('2026-10-26T09:11:00Z', big, [{ type: 'text', text: 'Renamed.' }])].join('\n')}\n`);
+    runGuard(stop(dir, 'old', 'Now write the tests of the retry.'), {}, io('2026-10-26T12:00:00Z'));
+    runGuard(JSON.stringify({ session_id: 'other', transcript_path: join(dir, 'other.jsonl'), cwd: '/repo', hook_event_name: 'UserPromptSubmit', prompt: 'Rename it in the tests too.' }), {}, io('2026-10-26T12:00:10Z'));
+    runGuard(stop(dir, 'old', 'Now write the tests of the retry.'), {}, io('2026-10-26T12:00:20Z'));
+    expect(out).toHaveLength(2);
+    runHandoff(start('clear'), io('2026-10-26T12:01:00Z'));
+    const note = (JSON.parse(out[2]!) as Printed).hookSpecificOutput.additionalContext;
+    expect(note).toContain('Last reply of the assistant:\nRenamed.');
+    expect(note).toContain('It was never sent: act on it only when the user tells you to go on with it.\nRename it in the tests too.');
   });
 
   it('does nothing on a start that is not a /clear, or on input it cannot read', () => {

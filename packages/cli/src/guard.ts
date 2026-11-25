@@ -169,6 +169,17 @@ const safe = (text: string): string => text.replace(/[^A-Za-z0-9-]/g, '_');
 /** One pending note per transcript folder, that is per project. */
 const markerPath = (stateDir: string, transcript: string): string => join(stateDir, `handoff-${safe(dirname(transcript))}.json`);
 
+/**
+ * A prompt of this session goes through: the one the guard stopped in it is no longer waiting for a /clear, and
+ * the next note must not give it as never sent. The marker of another session of the project stays.
+ */
+function forgetStopped(stateDir: string, transcript: string): void {
+  const marker = markerPath(stateDir, transcript);
+  if (!isPrivateDir(stateDir) || !existsSync(marker)) return;
+  const stopped = parse<{ transcript?: string }>(readFileSync(marker, 'utf8'))?.transcript;
+  if (stopped !== undefined && resolve(stopped) === resolve(transcript)) rmSync(marker, { force: true });
+}
+
 /** UserPromptSubmit hook. Prints a block decision, or nothing to let the prompt through. */
 export function runGuard(stdin: string, options: { minTokens?: string }, io: HookIO): number {
   try {
@@ -177,14 +188,18 @@ export function runGuard(stdin: string, options: { minTokens?: string }, io: Hoo
     const call = lastCall(readTail(input.transcript_path));
     const minTokens = Number(options.minTokens ?? DEFAULT_MIN_TOKENS);
     const message = call && guardMessage(call, io.now().getTime(), Number.isFinite(minTokens) ? minTokens : DEFAULT_MIN_TOKENS);
-    if (!call || !message) return 0;
+    if (!call || !message) {
+      // The cache lives again, as after a call the session made by itself, or the context is small: it goes on here.
+      forgetStopped(io.stateDir, input.transcript_path);
+      return 0;
+    }
     // Without a folder to remember the stop in, it could not tell a prompt sent again: the prompt goes through.
     if (!openPrivateDir(io.stateDir)) return 0;
     const seen = join(io.stateDir, `guard-${safe(input.session_id)}`);
     const marker = markerPath(io.stateDir, input.transcript_path);
     if (existsSync(seen) && readFileSync(seen, 'utf8') === String(call.at)) {
       // Sent again: the user chose to go on here.
-      rmSync(marker, { force: true });
+      forgetStopped(io.stateDir, input.transcript_path);
       return 0;
     }
     writeFileSync(seen, String(call.at), { mode: 0o600 });
