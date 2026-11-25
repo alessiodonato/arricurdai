@@ -10,7 +10,8 @@ import { formatHits, hideSecrets, knownSecrets, loadChunks, redact, search } fro
 // Two Claude Code hooks. `guard` (UserPromptSubmit) stops the first prompt after a pause that let the
 // prompt cache of a large session expire: going on would write the whole context to the cache again.
 // `handoff` (SessionStart) gives the session started with /clear a note on the one the guard stopped, with
-// the earlier context that matches the stopped prompt, and tells every new session how to run recall.
+// the stopped prompt and the earlier context that matches it, and tells every new session how to run recall.
+// The user sees the stopped prompt again too: /clear wipes it from the screen.
 // Both fail open: on any problem they print nothing and the prompt goes through.
 // `handoff --prepare` is not a hook: a tool runs it before it sends /clear, to have the same note without a stop.
 
@@ -44,6 +45,8 @@ const TAIL_BYTES = 2 * 1024 * 1024;
 const MARKER_MAX_AGE = 12 * HOUR;
 /** The share of the stopped prompt that a passage must hold to enter the note: below it, a passage is mostly noise. */
 const NOTE_MIN_COVERAGE = 0.4;
+/** Claude Code cuts a longer text of a hook to a preview of its start: what the hook prints stays under this. */
+const HOOK_TEXT_MAX = 10_000;
 /**
  * Input price in USD per million tokens, measured from the costs Claude Code records. Claude Fable 5.2 has no
  * recorded cost yet: its price is the published one.
@@ -196,7 +199,8 @@ export function runGuard(stdin: string, options: { minTokens?: string }, io: Hoo
 /**
  * `handoff --prepare`: a tool that sends /clear itself asks for the note on a session first. It writes the marker
  * the guard writes when it stops a prompt, with no prompt in it: the next session started with /clear in the same
- * project gets the note, without the earlier context that matches a prompt.
+ * project gets the note, without the earlier context that matches a prompt. When the guard has just stopped a
+ * prompt of that session, the marker keeps it: the tool sends the /clear the guard asked for.
  */
 export function prepareHandoff(path: string, io: Pick<HookIO, 'stateDir' | 'now'>): { ok: true } | { ok: false; error: string } {
   // The hook that reads the marker runs in another folder: the path it finds there must not depend on this one.
@@ -205,7 +209,11 @@ export function prepareHandoff(path: string, io: Pick<HookIO, 'stateDir' | 'now'
   if (!openPrivateDir(io.stateDir)) return { ok: false, error: `${io.stateDir} is not a private folder` };
   try {
     const context = lastCall(readTail(transcript))?.context ?? 0;
-    writeFileSync(markerPath(io.stateDir, transcript), JSON.stringify({ transcript, context, at: io.now().getTime() }), { mode: 0o600 });
+    const marker = markerPath(io.stateDir, transcript);
+    const at = io.now().getTime();
+    const stopped = existsSync(marker) ? parse<{ transcript?: string; at?: number; prompt?: string }>(readFileSync(marker, 'utf8')) : undefined;
+    const prompt = stopped?.transcript === transcript && at - (stopped.at ?? 0) < MARKER_MAX_AGE && typeof stopped.prompt === 'string' ? { prompt: stopped.prompt } : {};
+    writeFileSync(marker, JSON.stringify({ transcript, context, at, ...prompt }), { mode: 0o600 });
     return { ok: true };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
@@ -289,40 +297,73 @@ export function handoffNote(text: string, cwd: string | undefined, context: numb
   return parts.join('\n\n');
 }
 
-/** The note on the session the guard stopped, and the earlier context that matches the prompt it stopped. */
-function afterClear(input: HookInput & { transcript_path: string }, io: HookIO): string[] {
-  const marker = markerPath(io.stateDir, input.transcript_path);
-  if (!isPrivateDir(io.stateDir) || !existsSync(marker)) return [];
-  const pending = parse<{ transcript?: string; context?: number; at?: number; prompt?: string }>(readFileSync(marker, 'utf8'));
-  rmSync(marker, { force: true });
-  if (!pending?.transcript || pending.transcript === input.transcript_path) return [];
-  if (!(io.now().getTime() - (pending.at ?? 0) < MARKER_MAX_AGE)) return [];
-  const note = handoffNote(readFileSync(pending.transcript, 'utf8'), input.cwd, pending.context ?? 0);
-  if (!note) return [];
-  const { chunks, sessions } = loadChunks(dirname(input.transcript_path), input.session_id, io.cache);
-  const parts = [hideSecrets(note, knownSecrets(chunks))];
-  const prompt = pending.prompt?.trim();
-  if (prompt) {
-    const hits = search(chunks, prompt, 3, NOTE_MIN_COVERAGE);
-    if (hits.length > 0) parts.push(`Earlier context that matches the prompt you were about to send:\n${formatHits(hits, shorten(redact(prompt), 80), sessions, 800)}`);
-  }
-  return parts;
+/** The whole of a stopped prompt too long for the note, one for each project as the marker. */
+const stoppedPath = (stateDir: string, transcript: string): string => join(stateDir, `stopped-${safe(dirname(transcript))}.txt`);
+
+const STOPPED_FOR_AGENT = 'The prompt the user was about to send when the previous session was stopped. It was never sent: act on it only when the user tells you to go on with it.';
+const STOPPED_FOR_USER = 'arricurdai: the prompt that was stopped is in the note this session got. Tell Claude to go on with it, or send another prompt.';
+
+/**
+ * The stopped prompt, for the new session and for the user, who lost it from the screen with /clear. Whole when it
+ * fits in `room` characters; otherwise its start, and the whole of it in a file.
+ */
+function stoppedPrompt(prompt: string, room: number, file: string): { context: string; message: string } {
+  rmSync(file, { force: true });
+  const whole = Math.min(room - STOPPED_FOR_AGENT.length - 1, HOOK_TEXT_MAX - STOPPED_FOR_USER.length - 2);
+  if (prompt.length <= whole) return { context: `${STOPPED_FOR_AGENT}\n${prompt}`, message: `${STOPPED_FOR_USER}\n\n${prompt}` };
+  writeFileSync(file, prompt, { mode: 0o600 });
+  const size = `${prompt.length.toLocaleString('en-US')} characters`;
+  const forAgent = `${STOPPED_FOR_AGENT} It is ${size} long: this is its start, and the whole of it is in ${file}. Read that file before you act on it.`;
+  const forUser = `${STOPPED_FOR_USER} It is ${size} long: this is its start, and the whole of it is in ${file}`;
+  const start = prompt.slice(0, Math.max(0, Math.min(room - forAgent.length - 2, HOOK_TEXT_MAX - forUser.length - 3)));
+  return { context: `${forAgent}\n${start}…`, message: `${forUser}\n\n${start}…` };
 }
 
 /**
- * SessionStart hook. After a /clear that follows a stopped prompt, prints the note as additional context.
- * On every start it also tells the agent how to search earlier sessions.
+ * The note on the session the guard stopped, the prompt it stopped and the earlier context that matches it, in at
+ * most `room` characters. The message is for the user: the stopped prompt again.
+ */
+function afterClear(input: HookInput & { transcript_path: string }, io: HookIO, room: number): { parts: string[]; message?: string } {
+  const marker = markerPath(io.stateDir, input.transcript_path);
+  if (!isPrivateDir(io.stateDir) || !existsSync(marker)) return { parts: [] };
+  const pending = parse<{ transcript?: string; context?: number; at?: number; prompt?: string }>(readFileSync(marker, 'utf8'));
+  rmSync(marker, { force: true });
+  if (!pending?.transcript || pending.transcript === input.transcript_path) return { parts: [] };
+  if (!(io.now().getTime() - (pending.at ?? 0) < MARKER_MAX_AGE)) return { parts: [] };
+  const note = handoffNote(readFileSync(pending.transcript, 'utf8'), input.cwd, pending.context ?? 0);
+  if (!note) return { parts: [] };
+  const { chunks, sessions } = loadChunks(dirname(input.transcript_path), input.session_id, io.cache);
+  const secrets = knownSecrets(chunks);
+  const parts = [hideSecrets(note, secrets)];
+  const prompt = pending.prompt?.trim();
+  if (!prompt) return { parts };
+  // Each part after the first costs the two line breaks that join it to the others.
+  const left = (): number => room - parts.reduce((total, part) => total + part.length + 2, 0);
+  const stopped = stoppedPrompt(hideSecrets(prompt, secrets), left(), stoppedPath(io.stateDir, input.transcript_path));
+  parts.push(stopped.context);
+  const hits = search(chunks, prompt, 3, NOTE_MIN_COVERAGE);
+  const matches = hits.length > 0 ? `Earlier context that matches the prompt you were about to send:\n${formatHits(hits, shorten(redact(prompt), 80), sessions, 800)}` : undefined;
+  // The stopped prompt comes first: what matches it can be found again with recall.
+  if (matches !== undefined && matches.length <= left()) parts.push(matches);
+  return { parts, message: stopped.message };
+}
+
+/**
+ * SessionStart hook. After a /clear that follows a stopped prompt, prints the note as additional context, and the
+ * stopped prompt as a message for the user. On every start it also tells the agent how to search earlier sessions.
  */
 export function runHandoff(stdin: string, io: HookIO): number {
   try {
     const input = parse<HookInput>(stdin);
     if (!input?.transcript_path) return 0;
-    const parts = input.source === 'clear' ? afterClear({ ...input, transcript_path: input.transcript_path }, io) : [];
-    if (io.recallCommand) {
-      const why = input.source === 'compact' ? 'The summary of this session leaves out details. ' : '';
-      parts.push(`${why}To look up what was asked, decided or changed in earlier sessions of this project, run: ${io.recallCommand} "<words>"`);
-    }
-    if (parts.length > 0) io.stdout(JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: parts.join('\n\n') } }));
+    const why = input.source === 'compact' ? 'The summary of this session leaves out details. ' : '';
+    const hint = io.recallCommand ? [`${why}To look up what was asked, decided or changed in earlier sessions of this project, run: ${io.recallCommand} "<words>"`] : [];
+    const room = HOOK_TEXT_MAX - hint.reduce((total, part) => total + part.length + 2, 0);
+    const after = input.source === 'clear' ? afterClear({ ...input, transcript_path: input.transcript_path }, io, room) : { parts: [] };
+    const parts = [...after.parts, ...hint];
+    if (parts.length === 0) return 0;
+    const message = after.message === undefined ? {} : { systemMessage: after.message };
+    io.stdout(JSON.stringify({ ...message, hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: parts.join('\n\n') } }));
     return 0;
   } catch {
     return 0;

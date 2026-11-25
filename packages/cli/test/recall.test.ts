@@ -325,6 +325,31 @@ describe('handoff with recall', () => {
     expect(note).toContain('Earlier context that matches the prompt you were about to send');
     expect(note).toContain('reverse charge');
     expect(note).toContain('arricurdai recall "<words>"');
+    // The stopped prompt itself comes before what matches it.
+    const stopped = note.indexOf('It was never sent: act on it only when the user tells you to go on with it.\nwhy did foreign invoices fail? fatture clienti');
+    expect(stopped).toBeGreaterThan(0);
+    expect(stopped).toBeLessThan(note.indexOf('Earlier context that matches'));
+  });
+
+  it('leaves out the earlier context when a long stopped prompt takes the room of the note', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'arricurdai-recall-'));
+    writeFileSync(join(dir, 'old.jsonl'), older.join('\n'));
+    const big = { input_tokens: 2, cache_creation_input_tokens: 1_000, cache_read_input_tokens: 299_000, cache_creation: { ephemeral_1h_input_tokens: 1_000 } };
+    const last = join(dir, 'last.jsonl');
+    writeFileSync(last, [user('2026-10-25T09:00:00Z', 'Refactor the invoice module'), assistant('2026-10-25T09:05:00Z', [{ type: 'text', text: 'Refactor done.' }], big)].join('\n'));
+    const out: string[] = [];
+    const io = (at: string) => ({ stdout: (text: string) => out.push(text), now: () => new Date(at), stateDir: join(dir, 'state'), recallCommand: 'arricurdai recall' });
+
+    // The same words as above, many times: the prompt still matches, and no longer fits.
+    const prompt = `why did foreign invoices fail?${' fatture clienti'.repeat(700)}`;
+    runGuard(JSON.stringify({ session_id: 'last', transcript_path: last, cwd: '/repo', prompt }), {}, io('2026-10-26T12:00:00Z'));
+    runHandoff(JSON.stringify({ session_id: 'new', transcript_path: join(dir, 'new.jsonl'), cwd: '/repo', source: 'clear' }), io('2026-10-26T12:01:00Z'));
+
+    const note = (JSON.parse(out[1]!) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext;
+    expect(note).toContain('this is its start, and the whole of it is in');
+    expect(note).not.toContain('Earlier context');
+    expect(note).toContain('arricurdai recall "<words>"');
+    expect(note.length).toBeLessThanOrEqual(10_000);
   });
 
   it('leaves out the earlier context when it matches the stopped prompt only loosely', () => {

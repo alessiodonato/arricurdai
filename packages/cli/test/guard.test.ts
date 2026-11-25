@@ -31,6 +31,16 @@ function setup() {
   return { out, io, prompt, start, dir };
 }
 
+/** What the handoff hook prints after a /clear that follows a stopped prompt. */
+interface Printed {
+  systemMessage?: string;
+  hookSpecificOutput: { additionalContext: string };
+}
+
+/** The hook input of a prompt sent to the old session. */
+const stop = (dir: string, session: string, text: string): string =>
+  JSON.stringify({ session_id: session, transcript_path: join(dir, 'old.jsonl'), cwd: '/repo', hook_event_name: 'UserPromptSubmit', prompt: text });
+
 describe('lastCall', () => {
   it('reads the size of the last call and the cache lifetime of the latest writes', () => {
     const text = [assistant('2026-10-26T10:00:00Z', big), assistant('2026-10-26T10:01:00Z', { input_tokens: 1, cache_read_input_tokens: 300_000 })].join('\n');
@@ -92,6 +102,49 @@ describe('guard and handoff hooks', () => {
     expect(runGuard('not json', {}, io('2026-10-26T12:00:00Z'))).toBe(0);
     expect(out).toHaveLength(1);
   });
+
+  it('gives the stopped prompt back after /clear: to the new session as not sent yet, and to the user', () => {
+    const { out, io, start, dir } = setup();
+    const text = 'Add a retry to the upload client of the reports too.\nUse Password: Example2026 on staging.';
+    runGuard(stop(dir, 'old', text), {}, io('2026-10-26T12:00:00Z'));
+    runHandoff(start('clear'), io('2026-10-26T12:01:00Z'));
+    const printed = JSON.parse(out[1]!) as Printed;
+    const note = printed.hookSpecificOutput.additionalContext;
+    const hidden = 'Add a retry to the upload client of the reports too.\nUse Password: [redacted] on staging.';
+    expect(note).toContain(`It was never sent: act on it only when the user tells you to go on with it.\n${hidden}`);
+    expect(printed.systemMessage).toBe(`arricurdai: the prompt that was stopped is in the note this session got. Tell Claude to go on with it, or send another prompt.\n\n${hidden}`);
+    expect(JSON.stringify(printed)).not.toContain('Example2026');
+    // After the note on the old session.
+    expect(note.indexOf('It was never sent')).toBeGreaterThan(note.indexOf('Last reply of the assistant:'));
+    // It fits in the note: no file.
+    expect(readdirSync(join(dir, 'state')).filter((name) => name.startsWith('stopped-'))).toEqual([]);
+  });
+
+  it('keeps a stopped prompt too long for the note whole in a file, with its start in the note', () => {
+    const { out, io, start, dir } = setup();
+    const text = `Add a retry to the upload client, as this log asks.\n${'one line of the log\n'.repeat(1_000)}`.trim();
+    runGuard(stop(dir, 'old', text), {}, io('2026-10-26T12:00:00Z'));
+    runHandoff(start('clear'), { ...io('2026-10-26T12:01:00Z'), recallCommand: 'arricurdai recall' });
+    const printed = JSON.parse(out[1]!) as Printed;
+    const note = printed.hookSpecificOutput.additionalContext;
+    const files = (): string[] => readdirSync(join(dir, 'state')).filter((name) => name.startsWith('stopped-'));
+    const file = join(dir, 'state', files()[0]!);
+    expect(readFileSync(file, 'utf8')).toBe(text);
+    if (process.platform !== 'win32') expect(statSync(file).mode & 0o777).toBe(0o600);
+    expect(note).toContain(`It is 20,051 characters long: this is its start, and the whole of it is in ${file}. Read that file before you act on it.\nAdd a retry to the upload client, as this log asks.\none line of the log`);
+    expect(printed.systemMessage).toContain(`It is 20,051 characters long: this is its start, and the whole of it is in ${file}\n\nAdd a retry to the upload client, as this log asks.`);
+    // Claude Code cuts a longer text to a preview: the start of the prompt takes the room that is left.
+    expect(note.length).toBeLessThanOrEqual(10_000);
+    expect(note.length).toBeGreaterThan(9_900);
+    expect(printed.systemMessage!.length).toBeLessThanOrEqual(10_000);
+    expect(note.endsWith('run: arricurdai recall "<words>"')).toBe(true);
+
+    // The next prompt stopped in the project fits in the note: the file goes.
+    runGuard(stop(dir, 'later', 'go on'), {}, io('2026-10-26T12:02:00Z'));
+    runHandoff(start('clear'), io('2026-10-26T12:03:00Z'));
+    expect((JSON.parse(out[3]!) as Printed).systemMessage).toContain('\n\ngo on');
+    expect(files()).toEqual([]);
+  });
 });
 
 // Owners and modes of files, as on Linux and macOS.
@@ -145,8 +198,10 @@ describe('handoff --prepare', () => {
     expect(context).toContain('Files changed: src/upload.ts');
     expect(context).toContain('Retry added; tests are next.');
     expect(context).toContain('300,002 tokens');
-    // No prompt was stopped: no earlier context that matches one.
+    // No prompt was stopped: no earlier context that matches one, and nothing to give back.
     expect(context).not.toContain('Earlier context that matches');
+    expect(context).not.toContain('never sent');
+    expect(JSON.parse(out[0]!)).not.toHaveProperty('systemMessage');
     // Given once: the next /clear has no note.
     runHandoff(start('clear'), io('2026-10-26T12:00:10Z'));
     expect(out).toHaveLength(1);
@@ -159,6 +214,30 @@ describe('handoff --prepare', () => {
     expect(name).toMatch(/^handoff-.*\.json$/);
     expect(statSync(join(dir, 'state', name!)).mode & 0o777).toBe(0o600);
     expect(JSON.parse(readFileSync(join(dir, 'state', name!), 'utf8'))).toEqual({ transcript: join(dir, 'old.jsonl'), context: 300_002, at: Date.parse('2026-10-26T12:00:00Z') });
+  });
+
+  it('keeps the prompt the guard has just stopped in that session, and not one of another session or of long ago', () => {
+    const { out, io, start, dir } = setup();
+    const context = (index: number): string => (JSON.parse(out[index]!) as Printed).hookSpecificOutput.additionalContext;
+    runGuard(stop(dir, 'old', 'Now write the tests of the retry.'), {}, io('2026-10-26T12:00:00Z'));
+    expect(prepareHandoff(join(dir, 'old.jsonl'), io('2026-10-26T12:00:20Z'))).toEqual({ ok: true });
+    runHandoff(start('clear'), io('2026-10-26T12:00:25Z'));
+    expect(context(1)).toContain('It was never sent: act on it only when the user tells you to go on with it.\nNow write the tests of the retry.');
+    expect((JSON.parse(out[1]!) as Printed).systemMessage).toContain('\n\nNow write the tests of the retry.');
+
+    // Another session of the project: the prompt stopped in the first one is not its own.
+    writeFileSync(join(dir, 'other.jsonl'), `${session.join('\n')}\n`);
+    runGuard(stop(dir, 'again', 'Now write the tests of the retry.'), {}, io('2026-10-26T13:00:00Z'));
+    prepareHandoff(join(dir, 'other.jsonl'), io('2026-10-26T13:00:20Z'));
+    runHandoff(start('clear'), io('2026-10-26T13:00:25Z'));
+    expect(context(3)).not.toContain('never sent');
+
+    // Stopped more than twelve hours before: the note is new, the prompt is not given.
+    runGuard(stop(dir, 'once more', 'Now write the tests of the retry.'), {}, io('2026-10-27T00:00:00Z'));
+    prepareHandoff(join(dir, 'old.jsonl'), io('2026-10-27T13:00:00Z'));
+    runHandoff(start('clear'), io('2026-10-27T13:00:05Z'));
+    expect(context(5)).toContain('Retry added; tests are next.');
+    expect(context(5)).not.toContain('never sent');
   });
 
   it('says why when the transcript is not there, and writes nothing', () => {
